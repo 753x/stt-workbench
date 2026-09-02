@@ -329,7 +329,7 @@
     <div><kbd>Space</kbd> 재생/정지 · <kbd>M</kbd> 두 번(시작·끝)으로 구간 북마크(화자·텍스트 신경 안 씀, 첫 M 후 <kbd>Esc</kbd>로 취소) · <kbd>V</kbd> 영상으로 확인</div>
     <h3>2패스 — 북마크/행 정리 중</h3>
     <div><kbd>Space</kbd> 재생/정지(툴바 "구간 반복" 체크 여부에 따라 반복 또는 한 번만 재생 후 정지) · 핸들 드래그 또는 <kbd>I</kbd>/<kbd>O</kbd>로 경계 · <kbd>[</kbd>/<kbd>]</kbd>로 조정 대상 전환 후 <kbd>←</kbd><kbd>→</kbd> 미세조정<br>
-    <kbd>1</kbd>~<kbd>5</kbd> 화자 지정(자동추정됨, 틀리면 다시 눌러 덮어쓰기) → 텍스트 입력창에서 <kbd>L</kbd>(웃음) <kbd>Q</kbd>(아) <kbd>W</kbd>(어) <kbd>E</kbd>(음) <kbd>R</kbd>(예) 로 채우거나 직접 타이핑 → <kbd>Enter</kbd> 확정 · <kbd>X</kbd> 이 북마크 버림 · <kbd>Esc</kbd> 취소</div>
+    <kbd>1</kbd>~<kbd>5</kbd> 화자 지정(자동추정됨, 틀리면 다시 눌러 덮어쓰기) → 텍스트 입력창에서 <kbd>L</kbd>(웃음) <kbd>W</kbd>(어) <kbd>E</kbd>(음) 로 채우거나 직접 타이핑(아/예는 괄호 없이 그냥 입력) → <kbd>Enter</kbd> 확정 · <kbd>X</kbd> 이 북마크 버림 · <kbd>Esc</kbd> 취소</div>
     <h3>그 외</h3>
     <div>행 클릭 = 선택(소리 안 남, 경계만 수정) · <kbd>Ctrl</kbd>+<kbd>Z</kbd> 되돌리기 · 파형 위 <kbd>Shift</kbd>+휠 확대/축소, 휠 좌우 이동<br>
     행 선택 중 파형 구간 안쪽을 클릭하면 재생 위치만 그 자리로 이동 → ✂ 여기서 자르기 버튼으로 그 지점에서 행을 둘로 분할(텍스트는 양쪽에 원본 그대로 복사되니 직접 나눠서 정리) · 경계를 수정해 START가 앞 행보다 빨라지면 자동으로 시간순으로 재정렬됨</div>
@@ -368,7 +368,7 @@ let reviewingBookmarkRef = null;   // 지금 정리 중인 bookmarks 항목의 �
 let editSessionSnapshotTaken = false; // 이번 편집 세션에서 undo 스냅샷을 이미 찍었는지
 let selectedForMerge = new Set(); // "선택 합치기" 대상 — 인덱스 대신 segment 객체 참조로 추적(정렬/삭제에도 안전)
 
-const PALETTE = { q: '(아)', w: '(어)', e: '(음)', r: '(예)' }; // L은 (웃음) 전용키로 별도 처리
+const PALETTE = { w: '(어)', e: '(음)' }; // L은 (웃음) 전용키로 별도 처리. 아/예는 회의 결정으로 괄호 태깅 안 함 — 그냥 직접 타이핑
 
 // ── 되돌리기 ──────────────────────────────────────────
 const MAX_UNDO = 30;
@@ -562,7 +562,7 @@ function updateHint() {
       ? '핸들 드래그 또는 I/O로 경계 조정 · 구간 안쪽 클릭으로 위치 이동 후 ✂ 여기서 자르기 · Esc로 완료'
       : '핸들 드래그 또는 I/O로 경계 조정 · 1~5로 화자 지정';
   } else if (pendingStage === 'speaker-set') {
-    text = `화자 ${pendingSpeaker} — 텍스트 입력 후 Enter · L/Q/W/E/R 팔레트 · 1~5로 화자 변경`;
+    text = `화자 ${pendingSpeaker} — 텍스트 입력 후 Enter · L/W/E 팔레트 · 1~5로 화자 변경`;
   }
   el.textContent = text;
 }
@@ -1767,6 +1767,18 @@ function globalTick() {
   requestAnimationFrame(globalTick);
 }
 requestAnimationFrame(globalTick);
+
+// 탭이 백그라운드로 밀리면(다른 창으로 전환, 최소화 등) 브라우저가 requestAnimationFrame을
+// 멈춰버려서 재생 커서(주황 바)가 화면에서 그 자리에 멈춰 보이는 문제가 있다 — 오디오 자체는
+// 백그라운드에서도 계속 재생되기 때문에 소리와 화면이 어긋난다. 휠로 파형을 스크롤하면 그
+// 순간 한 번 수동으로 다시 그려져서 잠깐 맞는 위치로 보였다가, 다시 멈추는 것도 같은 이유다.
+// 탭이 다시 보이거나 창이 포커스를 받는 순간 즉시 한 번 다시 그려서 최신 위치로 따라잡는다.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && waveChannelData) { drawDetail(); drawMinimap(); }
+});
+window.addEventListener('focus', () => {
+  if (waveChannelData) { drawDetail(); drawMinimap(); }
+});
 
 function initWaveEvents() {
   const canvas = document.getElementById('detail-canvas');
