@@ -1185,7 +1185,11 @@ async function loadCsvFile(file) {
   }
 }
 function segToRow(s) {
-  return [guardFormulaLead(s.speaker || ''), fmt(s.start), fmt(s.end), (s.end - s.start).toFixed(3) + 's', guardFormulaLead(s.text || '')].join('\t');
+  // 이 함수는 "시트에 붙여넣기"용으로만 쓰인다(전체/한 행 복사) — 시간을 그냥 "00:00:09.734"로
+  // 두면 구글시트/Excel이 "시간 값이네" 하고 자기 기본 형식(밀리초 없는 h:mm:ss)으로 반올림해서
+  // 붙여넣는 순간 0:00:10처럼 뭉개진다. CSV 다운로드의 Excel용 옵션과 같은 방식(="...")으로
+  // 텍스트를 강제해 붙여넣기 직후에도 원래 표시 그대로 남게 한다.
+  return [guardFormulaLead(s.speaker || ''), excelSafeTimestamp(s.start), excelSafeTimestamp(s.end), (s.end - s.start).toFixed(3) + 's', guardFormulaLead(s.text || '')].join('\t');
 }
 function copyToClipboard(tsv, successMsg) {
   const done = (ok) => setMsg(ok ? successMsg : '복사 실패 — 표를 드래그로 직접 선택해 복사하세요.', !ok);
