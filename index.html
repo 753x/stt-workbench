@@ -1,0 +1,1905 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>STT 전사 워크벤치</title>
+<style>
+  :root {
+    --bg: #020617;
+    --panel: #0E1223;
+    --panel2: #0B0F1E;
+    --line: #233047;
+    --fg: #F8FAFC;
+    --muted: #8B98AF;
+    --accent: #14B8A6;
+    --accent2: #38BDF8;
+    --warn: #F97316;
+    --danger: #EF4444;
+    --sel: #134E4A;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .mono { font-family: "JetBrains Mono", "Consolas", monospace; }
+  button {
+    background: var(--accent);
+    color: #001510;
+    border: none;
+    padding: 6px 11px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: filter 150ms, opacity 150ms;
+    font-family: inherit;
+  }
+  button:hover { filter: brightness(1.1); }
+  button.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+  button.ghost:hover { border-color: var(--accent2); }
+  button.danger { background: transparent; color: var(--danger); border: 1px solid #7F1D1D; }
+  button.icon { padding: 6px 8px; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.active { background: var(--accent2); color: #001018; }
+  input[type=text], textarea, select {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    color: var(--fg);
+    padding: 6px 9px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: inherit;
+  }
+  input[type=text]:focus, textarea:focus, select:focus, button:focus-visible, td[contenteditable]:focus {
+    outline: 2px solid var(--accent2);
+    outline-offset: 1px;
+  }
+  textarea { width: 100%; height: 90px; font-family: "JetBrains Mono", monospace; font-size: 12px; resize: vertical; }
+  kbd { background: #1E293B; border: 1px solid var(--line); border-radius: 3px; padding: 0 5px; font-family: inherit; font-size: 11px; }
+
+  /* ── 툴바 ───────────────────────────────────────── */
+  #toolbar {
+    position: relative;
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 12px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+  }
+  #toolbar h1 { font-size: 13px; font-weight: 700; margin: 0 10px 0 0; white-space: nowrap; color: var(--accent2); }
+  #url-input { width: 260px; }
+  #toolbar .spacer { flex: 1; }
+  #save-badge { font-size: 11px; color: var(--accent); white-space: nowrap; }
+
+  /* 드롭다운 공통 (붙여넣기 드로어 / 북마크 목록) */
+  .dropdown {
+    position: absolute; top: calc(100% + 4px);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    box-shadow: 0 12px 28px rgba(0,0,0,0.5);
+    padding: 12px; z-index: 30; display: none;
+  }
+  .dropdown.open { display: block; }
+  #import-drawer { left: 12px; width: min(560px, 90vw); }
+  #bookmark-drawer { right: 12px; width: min(340px, 90vw); max-height: 50vh; overflow-y: auto; }
+  #merge-drawer { left: 0; width: min(360px, 90vw); }
+  .dropdown h3 { font-size: 12px; margin: 0 0 8px; color: var(--muted); font-weight: 500; }
+
+  /* ── 무대 (영상 + 파형) ─────────────────────────── */
+  #stage {
+    flex: 0 0 clamp(280px, 42vh, 480px);
+    display: flex; gap: 10px;
+    padding: 10px 12px 6px;
+    min-height: 0;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px;
+    display: flex; flex-direction: column;
+    min-width: 0; min-height: 0;
+  }
+  #video-panel { flex: 0 0 clamp(420px, 34vw, 640px); }
+  #wave-panel { flex: 1; }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; flex: 0 0 auto; }
+  .panel-head h2 { font-size: 11px; margin: 0; color: var(--muted); font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
+  #player { width: 100%; flex: 1; background: #000; border-radius: 6px; overflow: hidden; min-height: 0; }
+
+  #minimap-canvas { width: 100%; height: 26px; display: block; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; flex: 0 0 auto; }
+  #detail-canvas { width: 100%; flex: 1; display: block; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; margin-top: 6px; min-height: 0; }
+  #zoom-row { display: flex; gap: 4px; margin-top: 6px; flex: 0 0 auto; align-items: center; }
+  #zoom-row .zoom-btn { padding: 3px 8px; font-size: 11px; }
+  #preroll-label { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 4px; margin-left: auto; }
+
+  /* ── 작업 영역 (배너 + 테이블) ──────────────────── */
+  #work { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 12px 6px; gap: 6px; }
+  #pending-banner {
+    background: var(--panel);
+    border-left: 3px solid var(--accent2);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 12px;
+    display: none;
+    gap: 10px; align-items: center; flex-wrap: wrap;
+    flex: 0 0 auto;
+  }
+  #pending-banner.active { display: flex; }
+  #pending-text-input { width: 160px; }
+
+  #table-wrap {
+    flex: 1; min-height: 0;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow-y: auto;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em; }
+  thead { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+  td[contenteditable="true"] { cursor: text; outline: none; }
+  td[contenteditable="true"]:focus { background: #1E293B; }
+  .segrow { cursor: pointer; }
+  .segrow:hover { background: #0F1A2E; }
+  .segrow.new-row { animation: flash 1.4s ease-out; }
+  @keyframes flash { 0% { background: var(--sel); } 100% { background: transparent; } }
+  .segrow.now-playing { background: rgba(249, 115, 22, 0.18); box-shadow: inset 3px 0 0 var(--warn); }
+  .segrow.row-selected {
+    background: rgba(56, 189, 248, 0.20);
+    box-shadow: inset 4px 0 0 var(--accent2), inset 0 0 0 1px rgba(56, 189, 248, 0.55);
+  }
+  .segrow.row-selected td { position: relative; }
+  .edit-badge {
+    display: inline-flex; align-items: center; gap: 3px;
+    background: var(--accent2); color: #001526;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
+    padding: 2px 6px; border-radius: 999px; margin-right: 6px; white-space: nowrap;
+  }
+  .segrow.stt-row td:nth-child(2) { color: var(--muted); }
+  .segrow.manual-row td:nth-child(2) { color: var(--accent2); }
+  .row-actions { visibility: hidden; white-space: nowrap; }
+  .segrow:hover .row-actions, .segrow.row-selected .row-actions { visibility: visible; }
+  .row-actions button { padding: 2px 7px; font-size: 11px; margin-left: 3px; }
+
+  /* ── 상태바 ─────────────────────────────────────── */
+  #statusbar {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 14px;
+    padding: 5px 12px;
+    background: var(--panel);
+    border-top: 1px solid var(--line);
+    font-size: 12px;
+  }
+  #hint-text { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #msg-text { color: var(--accent); flex: 1; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #msg-text.err { color: var(--danger); }
+
+  /* ── 도움말 오버레이 ────────────────────────────── */
+  #help-overlay {
+    position: fixed; inset: 0; background: rgba(2,6,23,0.82);
+    display: none; align-items: center; justify-content: center; z-index: 50;
+  }
+  #help-overlay.open { display: flex; }
+  #help-card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 20px 24px; max-width: 640px; width: 90vw; font-size: 12.5px; line-height: 2;
+  }
+  #help-card h3 { font-size: 13px; margin: 14px 0 4px; color: var(--accent2); }
+  #help-card h3:first-child { margin-top: 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .segrow.new-row { animation: none; }
+    button, #msg-text { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>STT 워크벤치</h1>
+  <input type="text" id="url-input" placeholder="유튜브 링크">
+  <button class="ghost" onclick="loadFromInput()">불러오기</button>
+  <input type="file" id="audio-file-input" accept="audio/*,.m4a" onchange="loadAudioFile(event)">
+  <button class="ghost" id="restore-audio-btn" style="display:none;"></button>
+  <button class="ghost" id="import-toggle" onclick="toggleDrawer('import-drawer')">가져오기/내보내기 ▾</button>
+  <select id="rate-select" title="재생 속도" onchange="setPlaybackRate(this.value)">
+    <option value="1">1.0x</option>
+    <option value="0.75">0.75x</option>
+    <option value="0.5">0.5x</option>
+  </select>
+  <label id="preroll-label" style="margin:0;"><input type="checkbox" id="preroll-toggle" checked onchange="preRollEnabled=this.checked;"> 프리롤</label>
+  <label id="loop-label" style="margin:0;" title="끄면 구간을 한 번만 재생하고 끝에서 멈춥니다"><input type="checkbox" id="loop-toggle" onchange="loopEnabled=this.checked;"> 구간 반복</label>
+  <div class="spacer"></div>
+  <span id="save-badge">—</span>
+  <button class="ghost icon" onclick="performUndo()" title="되돌리기 (Ctrl+Z)">↶</button>
+  <button class="ghost icon" onclick="toggleHelp()" title="단축키 도움말">?</button>
+
+  <div class="dropdown" id="import-drawer">
+    <h3>STT 결과 붙여넣기 (탭 구분 — 화자·start·end·duration·텍스트, 시트에서 복사)</h3>
+    <textarea id="import-textarea" placeholder="A&#9;00:00:09.734&#9;00:00:12.657&#9;2.922&#9;뮤하 심심한데 볼 것도 없는 날."></textarea>
+    <div style="display:flex;gap:6px;margin-top:6px;align-items:center;">
+      <button onclick="importTsv()">불러오기 (기존 내용 교체)</button>
+      <button class="ghost" onclick="toggleDrawer('import-drawer')">닫기</button>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--line);margin:12px 0;">
+    <h3>CSV 파일 불러오기 (번호/화자/start/end/duration/stt 헤더 인식, 기존 내용 교체)</h3>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <input type="file" id="csv-file-input" accept=".csv,text/csv" onchange="if(this.files[0]) loadCsvFile(this.files[0]); this.value='';">
+    </div>
+    <hr style="border:none;border-top:1px solid var(--line);margin:12px 0;">
+    <h3>저장 / 내보내기</h3>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">JSON 저장은 localStorage 자동저장과 별개로 파일 백업용입니다 — 다른 PC나 브라우저로 옮길 때, 실수로 캐시가 지워졌을 때 이 파일로 복구하세요.</div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+      <button onclick="downloadJsonSnapshot()">JSON으로 저장 (Ctrl+S)</button>
+      <button class="ghost" onclick="document.getElementById('json-file-input').click()">JSON 불러오기</button>
+      <input type="file" id="json-file-input" accept="application/json,.json" style="display:none" onchange="if(this.files[0]) loadJsonSnapshot(this.files[0]); this.value='';">
+      <button class="ghost" onclick="downloadCsv(false)">CSV 다운로드</button>
+      <button class="ghost" onclick="downloadCsv(true)" title="시간 칸을 텍스트로 고정해 Excel이 00:00:04.948을 0:00:04로 뭉개지 않게 함">CSV 다운로드 (Excel용)</button>
+    </div>
+  </div>
+</div>
+
+<div id="stage">
+  <div class="panel" id="video-panel">
+    <div class="panel-head">
+      <h2>영상 (화자 확인)</h2>
+      <button class="ghost icon" onclick="toggleSource()" title="파형 ↔ 유튜브 전환 (V)">V</button>
+    </div>
+    <div id="player"></div>
+  </div>
+
+  <div class="panel" id="wave-panel">
+    <div class="panel-head">
+      <h2>파형</h2>
+      <span id="wave-time" class="mono" style="font-size:11px;color:var(--muted);"></span>
+    </div>
+    <canvas id="minimap-canvas" width="1260" height="26"></canvas>
+    <canvas id="detail-canvas" width="1260" height="140"></canvas>
+    <div id="zoom-row">
+      <button class="ghost zoom-btn" onclick="setZoom(2)">2s</button>
+      <button class="ghost zoom-btn" onclick="setZoom(6)">6s</button>
+      <button class="ghost zoom-btn" onclick="setZoom(15)">15s</button>
+      <button class="ghost zoom-btn" onclick="setZoom(60)">60s</button>
+      <button class="ghost zoom-btn" onclick="setZoom('full')">전체</button>
+      <span style="font-size:11px;color:var(--muted);margin-left:6px;">Shift+휠 확대 · 휠 이동</span>
+    </div>
+    <audio id="wave-audio" style="display:none;"></audio>
+  </div>
+</div>
+
+<div id="work">
+  <div style="display:flex; align-items:center; gap:8px; position:relative; flex:0 0 auto;">
+    <span id="bookmark-count" class="mono" style="font-size:12px;color:var(--muted);">북마크 0개</span>
+    <button class="ghost" onclick="reviewNextBookmark()">다음 북마크 정리 (N)</button>
+    <button class="ghost" id="bookmark-toggle" onclick="toggleDrawer('bookmark-drawer')">목록 ▾</button>
+    <div class="dropdown" id="bookmark-drawer">
+      <h3>북마크 목록</h3>
+      <div id="bookmark-list"></div>
+    </div>
+    <button class="ghost" id="merge-toggle" onclick="toggleDrawer('merge-drawer')">화자 합치기 ▾</button>
+    <div class="dropdown" id="merge-drawer">
+      <h3>화자별 발화 합치기</h3>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">연속으로 같은 화자가 말한 행을 하나로 합칩니다. 15초를 넘기면 단어 경계에서 다시 나눕니다(정확한 단어별 시각이 없어 추정치 — 필요하면 드래그/I,O로 미세조정하세요).</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px;">
+        <label>침묵 임계값(초) <input type="text" id="merge-gap-input" value="3" style="width:48px;"></label>
+        <label>최대 길이(초) <input type="text" id="merge-maxdur-input" value="15" style="width:48px;"></label>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+        <button onclick="mergeSameSpeakerRuns(parseFloat(document.getElementById('merge-gap-input').value) || 3, parseFloat(document.getElementById('merge-maxdur-input').value) || 15)">전체 합치기</button>
+        <button id="merge-selected-btn" disabled onclick="mergeSelectedSpeakerRuns(parseFloat(document.getElementById('merge-gap-input').value) || 3, parseFloat(document.getElementById('merge-maxdur-input').value) || 15)">선택 합치기 (0)</button>
+        <button class="ghost" onclick="clearMergeSelection()">선택 해제</button>
+        <button class="ghost" onclick="toggleDrawer('merge-drawer')">닫기</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px;">테이블 맨 앞 체크박스로 행을 골라두면 "선택 합치기"는 고른 행끼리만 같은 규칙으로 합치고, 나머지 행은 그대로 둡니다.</div>
+    </div>
+    <span style="flex:1;"></span>
+    <button class="ghost" onclick="copyAll()">전체 복사</button>
+    <button class="danger" onclick="clearAll()">전체 삭제</button>
+  </div>
+  <div id="pending-banner">
+    <span id="pending-summary" class="mono"></span>
+    <input type="text" id="pending-text-input" placeholder="(자유 입력 후 Enter)">
+    <button class="ghost" id="cut-here-btn" style="display:none;" onclick="cutPendingAtPlayhead()">✂ 여기서 자르기</button>
+  </div>
+  <div id="table-wrap">
+    <table>
+      <thead><tr><th><input type="checkbox" id="select-all-checkbox" title="전체 선택/해제" onchange="toggleSelectAllForMerge(this.checked)"></th><th>#</th><th>화자</th><th>start</th><th>end</th><th>dur</th><th>텍스트</th><th></th></tr></thead>
+      <tbody id="segment-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="statusbar">
+  <span id="hint-text" class="mono"></span>
+  <span id="msg-text"></span>
+</div>
+
+<div id="help-overlay" onclick="if(event.target===this) toggleHelp();">
+  <div id="help-card">
+    <h3>1패스 — 계속 들으면서</h3>
+    <div><kbd>Space</kbd> 재생/정지 · <kbd>M</kbd> 두 번(시작·끝)으로 구간 북마크(화자·텍스트 신경 안 씀, 첫 M 후 <kbd>Esc</kbd>로 취소) · <kbd>V</kbd> 영상으로 확인</div>
+    <h3>2패스 — 북마크/행 정리 중</h3>
+    <div><kbd>Space</kbd> 재생/정지(툴바 "구간 반복" 체크 여부에 따라 반복 또는 한 번만 재생 후 정지) · 핸들 드래그 또는 <kbd>I</kbd>/<kbd>O</kbd>로 경계 · <kbd>[</kbd>/<kbd>]</kbd>로 조정 대상 전환 후 <kbd>←</kbd><kbd>→</kbd> 미세조정<br>
+    <kbd>1</kbd>~<kbd>5</kbd> 화자 지정(자동추정됨, 틀리면 다시 눌러 덮어쓰기) → 텍스트 입력창에서 <kbd>L</kbd>(웃음) <kbd>Q</kbd>(아) <kbd>W</kbd>(어) <kbd>E</kbd>(음) <kbd>R</kbd>(예) 로 채우거나 직접 타이핑 → <kbd>Enter</kbd> 확정 · <kbd>X</kbd> 이 북마크 버림 · <kbd>Esc</kbd> 취소</div>
+    <h3>그 외</h3>
+    <div>행 클릭 = 선택(소리 안 남, 경계만 수정) · <kbd>Ctrl</kbd>+<kbd>Z</kbd> 되돌리기 · 파형 위 <kbd>Shift</kbd>+휠 확대/축소, 휠 좌우 이동<br>
+    행 선택 중 파형 구간 안쪽을 클릭하면 재생 위치만 그 자리로 이동 → ✂ 여기서 자르기 버튼으로 그 지점에서 행을 둘로 분할(텍스트는 양쪽에 원본 그대로 복사되니 직접 나눠서 정리) · 경계를 수정해 START가 앞 행보다 빨라지면 자동으로 시간순으로 재정렬됨</div>
+    <div style="margin-top:14px;text-align:right;"><button class="ghost" onclick="toggleHelp()">닫기</button></div>
+  </div>
+</div>
+
+<script>
+// ── 전역 상태 ─────────────────────────────────────────
+let segments = [];               // { speaker, start, end, text, source: 'stt'|'manual' }
+let bookmarks = [];               // [[startSec, endSec], ...] — 1패스에서 M 두 번으로 지정한 구간
+let bookmarkPending = null;        // M을 한 번 눌러 시작점만 찍은 상태 (sec)
+let playerObj = null, apiReady = false;
+let speakerList = [];             // 불러온 데이터에 등장한 화자 순서 (1~5 키 매핑, 자동추정용)
+
+let waveChannelData = null, waveSampleRate = 0, waveDuration = 0;
+let waveAudioEl = null, waveRepeatInterval = null, youtubeRepeatInterval = null;
+let detailWindowStart = 0, detailWindowDur = 8;
+let waveDragging = false, dragTarget = null, dragMoveAnchor = null;
+let waveHasPlayed = false;
+let loopActive = false;
+let playbackRate = 1, preRollEnabled = true, loopEnabled = false;
+let lastSource = 'wave'; // 'wave' | 'youtube' — v로 전환하거나 재생이 시작될 때마다 갱신, 재생 재개 시 어느 쪽을 쓸지 판단하는 기준
+const PREROLL_SEC = 0.3;
+const HANDLE_PX = 8;
+
+// 대기(pending) 상태: 북마크 정리(new) 또는 기존 행 재지정(edit)
+let pendingMode = null;      // null | 'new' | 'edit'
+let pendingStage = 'idle';   // 'idle' | 'boundary' | 'speaker-set'
+let pendingStart = null, pendingEnd = null, pendingSpeaker = null;
+let editingIndex = null;     // pendingMode==='edit'일 때 수정 중인 segments 인덱스
+let selectedRowIndex = null; // 클릭으로 선택된 행 (edit와 동일 개념)
+let lastBoundaryTouched = 'end'; // '['/']'로 전환, ←→ 대상
+let reviewingBookmarkIndex = null; // 지금 정리 중인 bookmarks 인덱스 (표시용 — 실제 splice 대상은 reviewingBookmarkRef로 찾음)
+let reviewingBookmarkRef = null;   // 지금 정리 중인 bookmarks 항목의 배열 참조 (정렬/삭제로 인덱스가 밀려도 항상 정확한 항목을 가리킴)
+let editSessionSnapshotTaken = false; // 이번 편집 세션에서 undo 스냅샷을 이미 찍었는지
+let selectedForMerge = new Set(); // "선택 합치기" 대상 — 인덱스 대신 segment 객체 참조로 추적(정렬/삭제에도 안전)
+
+const PALETTE = { q: '(아)', w: '(어)', e: '(음)', r: '(예)' }; // L은 (웃음) 전용키로 별도 처리
+
+// ── 되돌리기 ──────────────────────────────────────────
+const MAX_UNDO = 30;
+let undoStack = [];
+function pushUndo() {
+  try {
+    undoStack.push(JSON.stringify({ segments, bookmarks }));
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+  } catch (e) {}
+}
+function performUndo() {
+  if (undoStack.length === 0) { setMsg('되돌릴 작업이 없습니다.'); return; }
+  const snap = JSON.parse(undoStack.pop());
+  segments = snap.segments; bookmarks = snap.bookmarks;
+  resetPending();
+  renderSegments();
+  updateBookmarkUI();
+  drawMinimap(); drawDetail();
+  saveState();
+  setMsg('되돌렸습니다 (남은 ' + undoStack.length + '단계).');
+}
+
+// ── 저장/복원 ─────────────────────────────────────────
+const STORAGE_KEY = 'stt-workbench-v2';
+function saveState() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ segments, bookmarks })); } catch (e) {}
+  document.getElementById('save-badge').textContent = '저장됨 ✓ ' + new Date().toLocaleTimeString('ko-KR');
+}
+function restoreState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const data = JSON.parse(raw);
+      segments = data.segments || [];
+      bookmarks = data.bookmarks || [];
+      recomputeSpeakerList();
+      renderSegments();
+      updateBookmarkUI();
+      setMsg(segments.length + '개 행, ' + bookmarks.length + '개 북마크를 이전 세션에서 복원했습니다.');
+    }
+  } catch (e) {}
+}
+// 한 번 등록된 화자는 지금 안 쓰이더라도 명부에서 빼지 않는다 — 드롭다운 옵션과 1~5 키
+// 매핑이 작업 도중 흔들리면 안 되기 때문 (예: 1행에서 A→B로 화자를 바꾸면 A를 쓰는 행이
+// 없어져 예전엔 A가 목록에서 증발했음). 완전 초기화는 clearAll()이 speakerList=[]로 명시적으로 함.
+function recomputeSpeakerList() {
+  const used = new Set(segments.map(s => s.speaker).filter(Boolean));
+  used.forEach(sp => { if (!speakerList.includes(sp)) speakerList.push(sp); });
+}
+
+// ── 화자별 발화 합치기 (연속 같은 화자를 하나로, 침묵 3초/최대 15초 규칙) ──
+// 단어별 타임스탬프가 없으므로, 묶음 전체 길이 대비 "단어 순서 비율 = 시간 비율"로
+// 가정해 자르는 시각을 선형 추정한다 — 정확한 값이 아니라 근사치(사용자 확인·승인됨).
+function splitBlockByDuration(block, maxDurSec) {
+  const totalDur = block.end - block.start;
+  if (totalDur <= maxDurSec) return [block];
+  const words = block.texts.join(' ').split(/\s+/).filter(Boolean);
+  if (words.length <= 1) return [block]; // 단어가 하나뿐이면 자를 수 없음
+  const results = [];
+  let wordStartIdx = 0;
+  let curStart = block.start;
+  while (true) {
+    const remainingDur = block.end - curStart;
+    const remainingWords = words.length - wordStartIdx;
+    if (remainingDur <= maxDurSec || remainingWords <= 1) {
+      results.push({ speaker: block.speaker, start: curStart, end: block.end, texts: [words.slice(wordStartIdx).join(' ')], source: block.source });
+      break;
+    }
+    const targetTime = curStart + maxDurSec;
+    const ratio = (targetTime - block.start) / totalDur;
+    let cutWordIdx = Math.floor(ratio * words.length);
+    cutWordIdx = Math.max(wordStartIdx + 1, Math.min(cutWordIdx, words.length - 1));
+    const cutTime = block.start + (cutWordIdx / words.length) * totalDur;
+    results.push({ speaker: block.speaker, start: curStart, end: cutTime, texts: [words.slice(wordStartIdx, cutWordIdx).join(' ')], source: block.source });
+    curStart = cutTime;
+    wordStartIdx = cutWordIdx;
+  }
+  return results;
+}
+function mergeSameSpeakerRuns(gapSec, maxDurSec) {
+  if (segments.length === 0) { setMsg('합칠 행이 없습니다.', true); return; }
+  pushUndo();
+  const sorted = [...segments].sort((a, b) => a.start - b.start);
+  const runs = [];
+  let run = null;
+  sorted.forEach(seg => {
+    if (run && run.speaker === seg.speaker && (seg.start - run.end) < gapSec) {
+      run.end = seg.end;
+      run.texts.push(seg.text || '');
+      if (seg.source === 'manual') run.source = 'manual';
+    } else {
+      if (run) runs.push(run);
+      run = { speaker: seg.speaker, start: seg.start, end: seg.end, texts: [seg.text || ''], source: seg.source };
+    }
+  });
+  if (run) runs.push(run);
+
+  const blocks = [];
+  runs.forEach(r => blocks.push(...splitBlockByDuration(r, maxDurSec)));
+
+  segments = blocks.map(b => ({ speaker: b.speaker, start: b.start, end: b.end, text: b.texts.join(' ').trim(), source: 'manual' }));
+  selectedForMerge.clear();
+  resetPending();
+  recomputeSpeakerList();
+  renderSegments();
+  saveState();
+  setMsg(`${sorted.length}개 행을 ${segments.length}개로 합쳤습니다 (침묵 ${gapSec}초 이상·최대 ${maxDurSec}초 기준).`);
+  closeDrawers();
+}
+// 체크박스로 고른 행끼리만 같은 규칙(연속·같은 화자·침묵 임계값)으로 합침 — 나머지 행은 그대로 둠
+function mergeSelectedSpeakerRuns(gapSec, maxDurSec) {
+  const selected = segments.filter(s => selectedForMerge.has(s));
+  if (selected.length < 2) { setMsg('합칠 행을 2개 이상 선택하세요.', true); return; }
+  pushUndo();
+  const insertAt = Math.min(...selected.map(s => segments.indexOf(s)));
+  const sorted = [...selected].sort((a, b) => a.start - b.start);
+  const runs = [];
+  let run = null;
+  sorted.forEach(seg => {
+    if (run && run.speaker === seg.speaker && (seg.start - run.end) < gapSec) {
+      run.end = seg.end;
+      run.texts.push(seg.text || '');
+      if (seg.source === 'manual') run.source = 'manual';
+    } else {
+      if (run) runs.push(run);
+      run = { speaker: seg.speaker, start: seg.start, end: seg.end, texts: [seg.text || ''], source: seg.source };
+    }
+  });
+  if (run) runs.push(run);
+
+  const blocks = [];
+  runs.forEach(r => blocks.push(...splitBlockByDuration(r, maxDurSec)));
+  const merged = blocks.map(b => ({ speaker: b.speaker, start: b.start, end: b.end, text: b.texts.join(' ').trim(), source: 'manual' }));
+
+  segments = segments.filter(s => !selectedForMerge.has(s));
+  segments.splice(insertAt, 0, ...merged);
+  selectedForMerge.clear();
+  resetPending();
+  recomputeSpeakerList();
+  renderSegments();
+  saveState();
+  setMsg(`선택한 ${sorted.length}개 행을 ${merged.length}개로 합쳤습니다 (침묵 ${gapSec}초 이상·최대 ${maxDurSec}초 기준).`);
+  closeDrawers();
+}
+
+// ── 시간 포맷 ─────────────────────────────────────────
+function fmt(t) {
+  t = Math.max(0, Number(t) || 0);
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const s = (t % 60).toFixed(3).padStart(6, '0');
+  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + s;
+}
+// HH:MM:SS.mmm / MM:SS.mmm / 순수 초 모두 인식. Excel 축약방지용 ="00:00:04.948" 래퍼와
+// 선행 '(작은따옴표, 텍스트 강제용)도 벗겨낸다 — 우리가 내보낸 CSV를 다시 불러올 때 필요.
+function parseTimeStr(t) {
+  let raw = (t || '').trim();
+  if (!raw) return NaN;
+  const excelTextMatch = raw.match(/^=\s*"([^"]+)"\s*$/);
+  if (excelTextMatch) raw = excelTextMatch[1].trim();
+  if (raw.startsWith("'")) raw = raw.slice(1).trim();
+  if (/^\d+(?:\.\d+)?$/.test(raw)) return Number(raw);
+  const parts = raw.split(':').map(v => v.trim());
+  if (parts.length !== 2 && parts.length !== 3) return NaN;
+  const sec = parseFloat(parts[parts.length - 1]);
+  const min = parseInt(parts[parts.length - 2], 10);
+  const hour = parts.length === 3 ? parseInt(parts[0], 10) : 0;
+  if (![sec, min, hour].every(Number.isFinite)) return NaN;
+  return hour * 3600 + min * 60 + sec;
+}
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// ── 상태바: 메시지 + 상황별 힌트 ───────────────────────
+function setMsg(msg, isError) {
+  const el = document.getElementById('msg-text');
+  el.textContent = msg || '';
+  el.classList.toggle('err', !!isError);
+}
+function updateHint() {
+  const el = document.getElementById('hint-text');
+  let text = '';
+  if (pendingStage === 'idle') {
+    if (bookmarkPending != null) text = `북마크 시작 ${fmt(bookmarkPending)} — 끝나는 지점에서 M`;
+    else text = '계속 들으면서 겹치는 간투어가 들리면 M 두 번으로 북마크';
+  } else if (pendingStage === 'boundary') {
+    text = pendingMode === 'edit'
+      ? '핸들 드래그 또는 I/O로 경계 조정 · 구간 안쪽 클릭으로 위치 이동 후 ✂ 여기서 자르기 · Esc로 완료'
+      : '핸들 드래그 또는 I/O로 경계 조정 · 1~5로 화자 지정';
+  } else if (pendingStage === 'speaker-set') {
+    text = `화자 ${pendingSpeaker} — 텍스트 입력 후 Enter · L/Q/W/E/R 팔레트 · 1~5로 화자 변경`;
+  }
+  el.textContent = text;
+}
+
+// ── 드로어 / 도움말 토글 ────────────────────────────────
+function toggleDrawer(id) {
+  const el = document.getElementById(id);
+  const willOpen = !el.classList.contains('open');
+  document.querySelectorAll('.dropdown.open').forEach(d => d.classList.remove('open'));
+  if (willOpen) el.classList.add('open');
+}
+function closeDrawers() { document.querySelectorAll('.dropdown.open').forEach(d => d.classList.remove('open')); }
+function toggleHelp() { document.getElementById('help-overlay').classList.toggle('open'); }
+
+// ── 재생원 통합 (로컬 파형 / 유튜브 중 지금 재생 중인 쪽) ──
+function isWavePlaying() { return !!(waveAudioEl && !waveAudioEl.paused); }
+function isYoutubePlaying() { return !!(playerObj && playerObj.getPlayerState && playerObj.getPlayerState() === 1); }
+function getActiveTime() {
+  if (isWavePlaying()) return { source: 'wave', t: waveAudioEl.currentTime };
+  if (isYoutubePlaying()) return { source: 'youtube', t: playerObj.getCurrentTime() };
+  const src = pickSource();
+  if (src === 'youtube') return { source: 'youtube', t: playerObj.getCurrentTime() };
+  if (src === 'wave') return { source: 'wave', t: waveAudioEl.currentTime };
+  return null;
+}
+// 지금 재생 중인 쪽, 없으면 마지막으로 쓰던 쪽(v로 전환한 쪽)을 우선한다 —
+// 예전엔 waveAudioEl이 있으면 무조건 그쪽을 썼기 때문에, v로 유튜브를 봐도 Space/구간반복이 계속 파형으로만 동작하는 문제가 있었음.
+function pickSource() {
+  if (isWavePlaying()) return 'wave';
+  if (isYoutubePlaying()) return 'youtube';
+  if (lastSource === 'youtube' && playerObj) return 'youtube';
+  if (waveAudioEl) return 'wave';
+  if (playerObj) return 'youtube';
+  return null;
+}
+function setPlaybackRate(v) {
+  playbackRate = parseFloat(v);
+  if (waveAudioEl) waveAudioEl.playbackRate = playbackRate;
+  if (playerObj && playerObj.setPlaybackRate) { try { playerObj.setPlaybackRate(playbackRate); } catch (e) {} }
+}
+function handleSpaceToggle() {
+  const src = pickSource();
+  if (pendingStage !== 'idle') {
+    if (!loopActive) { startLoopForPending(); return; }
+    if (isWavePlaying()) { waveAudioEl.pause(); setMsg(`${fmt(waveAudioEl.currentTime)}에서 정지 — Space로 재개`); return; }
+    if (isYoutubePlaying()) { playerObj.pauseVideo(); return; }
+    if (src === 'wave') { waveAudioEl.play(); return; }
+    if (src === 'youtube') { playerObj.playVideo(); return; }
+    return;
+  }
+  if (isWavePlaying()) { waveAudioEl.pause(); setMsg(`${fmt(waveAudioEl.currentTime)}에서 정지 — Space로 재생`); return; }
+  if (isYoutubePlaying()) { playerObj.pauseVideo(); return; }
+  if (src === 'wave') { waveAudioEl.play(); waveHasPlayed = true; setMsg('재생 중 — 겹치는 간투어가 들리면 M'); return; }
+  if (src === 'youtube') { playerObj.playVideo(); return; }
+  setMsg('먼저 음원 파일이나 유튜브 링크를 불러오세요.', true);
+}
+// v: 파형 ↔ 유튜브 전환 — 지금 쓰던 쪽을 멈추고 반대쪽을 같은 시각에서 재생
+function toggleSource() {
+  const goingTo = pickSource() === 'youtube' ? 'wave' : 'youtube';
+  const active = getActiveTime();
+  const t = active ? active.t : 0;
+  if (goingTo === 'youtube') {
+    if (!playerObj) { setMsg('먼저 유튜브 링크를 불러오세요.', true); return; }
+    playerObj.seekTo(Math.max(0, t - 0.2), true);
+    playerObj.playVideo(); // onStateChange에서 lastSource 갱신 + 파형 정지
+  } else {
+    if (!waveAudioEl) { setMsg('불러온 로컬 음원이 없습니다.', true); return; }
+    waveAudioEl.currentTime = Math.max(0, t - 0.2);
+    waveAudioEl.play(); // play 리스너에서 lastSource 갱신 + 유튜브 정지
+    waveHasPlayed = true;
+  }
+}
+function stopAllLoops() {
+  if (waveRepeatInterval) { clearInterval(waveRepeatInterval); waveRepeatInterval = null; }
+  if (youtubeRepeatInterval) { clearInterval(youtubeRepeatInterval); youtubeRepeatInterval = null; }
+}
+function stopLoop() {
+  stopAllLoops();
+  loopActive = false;
+  if (waveAudioEl && !waveAudioEl.paused) waveAudioEl.pause();
+  if (isYoutubePlaying()) playerObj.pauseVideo();
+}
+function startLoopForPending() {
+  stopAllLoops();
+  loopActive = true;
+  // startAt을 클로저에 고정하지 않는다 — 매 반복 시작 시점에 pendingStart를 다시 읽어야
+  // 재생 중 드래그로 경계를 바꿨을 때 다음 반복부터 바로 반영된다. pendingEnd는 이미
+  // interval 콜백 안에서 매번 새로 읽고 있었다(경계 조건 자체가 참조라). 예전엔 startAt이
+  // 고정이라, 경계를 놓을 때마다(mouseup) 루프를 통째로 재시작해야 했고 그때마다 소리가 끊겼다.
+  const getStartAt = () => preRollEnabled ? Math.max(0, pendingStart - PREROLL_SEC) : pendingStart;
+  const src = pickSource();
+  if (src === 'wave' || (src !== 'youtube' && waveAudioEl)) {
+    waveAudioEl.currentTime = getStartAt();
+    waveAudioEl.playbackRate = playbackRate;
+    waveAudioEl.play();
+    waveHasPlayed = true;
+    waveRepeatInterval = setInterval(() => {
+      if (waveAudioEl.currentTime >= pendingEnd) {
+        if (loopEnabled) waveAudioEl.currentTime = getStartAt();
+        else { waveAudioEl.pause(); stopAllLoops(); loopActive = false; }
+      }
+    }, 50);
+  } else if (playerObj) {
+    playerObj.seekTo(Math.max(0, getStartAt() - 0.2), true);
+    playerObj.playVideo();
+    try { playerObj.setPlaybackRate(playbackRate); } catch (e) {}
+    youtubeRepeatInterval = setInterval(() => {
+      if (playerObj.getCurrentTime() >= pendingEnd) {
+        if (loopEnabled) playerObj.seekTo(Math.max(0, getStartAt() - 0.2), true);
+        else { playerObj.pauseVideo(); stopAllLoops(); loopActive = false; }
+      }
+    }, 150);
+  } else {
+    setMsg('먼저 음원 파일이나 유튜브 링크를 불러오세요.', true);
+    loopActive = false;
+  }
+}
+
+// ── 1패스: 북마크 (M 두 번 = 시작·끝) ─────────────────
+function markBookmark() {
+  if (pendingStage !== 'idle') { setMsg('먼저 지금 하던 것을 끝내거나 Escape로 취소하세요.', true); return; }
+  const active = getActiveTime();
+  if (!active) { setMsg('먼저 재생을 시작하세요 (Space).', true); return; }
+  if (bookmarkPending == null) {
+    bookmarkPending = active.t;
+    setMsg(`북마크 시작 ${fmt(active.t)} — 끝나는 지점에서 M을 다시 누르세요`);
+    updateHint();
+    drawMinimap(); drawDetail();
+    return;
+  }
+  const s = Math.min(bookmarkPending, active.t), e = Math.max(bookmarkPending, active.t);
+  pushUndo();
+  bookmarks.push([s, e]);
+  bookmarks.sort((a, b) => a[0] - b[0]);
+  bookmarkPending = null;
+  updateBookmarkUI();
+  saveState();
+  setMsg(`북마크 ${fmt(s)}~${fmt(e)} 추가됨 (총 ${bookmarks.length}개) — 계속 들으세요`);
+  updateHint();
+  drawMinimap(); drawDetail();
+}
+function cancelBookmarkPending() {
+  if (bookmarkPending == null) return false;
+  bookmarkPending = null;
+  setMsg('북마크 시작점을 취소했습니다.');
+  updateHint();
+  drawMinimap(); drawDetail();
+  return true;
+}
+function updateBookmarkUI() {
+  document.getElementById('bookmark-count').textContent = '북마크 ' + bookmarks.length + '개';
+  const list = document.getElementById('bookmark-list');
+  if (bookmarks.length === 0) { list.innerHTML = '<div style="color:var(--muted);font-size:12px;">없음</div>'; return; }
+  list.innerHTML = bookmarks.map((b, i) =>
+    `<div class="mono" style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--line);font-size:12px;">
+       <span style="flex:1;">${fmt(b[0])} ~ ${fmt(b[1])}</span>
+       <button class="ghost" style="padding:2px 7px;font-size:11px;" onclick="closeDrawers(); reviewBookmarkAt(${i})">정리</button>
+       <button class="danger" style="padding:2px 7px;font-size:11px;" onclick="removeBookmarkAt(${i})">삭제</button>
+     </div>`
+  ).join('');
+}
+function removeBookmarkAt(i) {
+  if (!bookmarks[i]) return;
+  pushUndo();
+  const removingReviewed = bookmarks[i] === reviewingBookmarkRef;
+  bookmarks.splice(i, 1);
+  updateBookmarkUI();
+  saveState();
+  if (removingReviewed) { resetPending(); setMsg('정리 중이던 북마크를 삭제해 정리를 취소했습니다.'); return; }
+  setMsg('북마크를 삭제했습니다.');
+}
+
+// ── 화자 자동 추정 ─────────────────────────────────────
+function resolveSpeakerKey(num) {
+  const idx = num - 1;
+  if (speakerList[idx]) return speakerList[idx];
+  return String(num);
+}
+function autoEstimateSpeaker() {
+  if (pendingMode !== 'new') return false;
+  if (speakerList.length < 2) return false;
+  const overlapping = segments.filter(s => s.start < pendingEnd && s.end > pendingStart);
+  const distinct = Array.from(new Set(overlapping.map(s => s.speaker).filter(Boolean)));
+  if (distinct.length !== 1) return false;
+  const other = speakerList.find(s => s !== distinct[0]);
+  if (!other) return false;
+  pendingSpeaker = other;
+  return true;
+}
+
+// ── 2패스: 북마크 정리 / 기존 행 재지정 ────────────────
+function reviewNextBookmark() { reviewBookmarkAt(0); }
+function reviewBookmarkAt(i) {
+  if (pendingStage !== 'idle') { setMsg('먼저 지금 하던 것을 끝내거나 Escape로 취소하세요.', true); return; }
+  if (!bookmarks[i]) { setMsg('정리할 북마크가 없습니다.'); return; }
+  const [s, e] = bookmarks[i];
+  pendingMode = 'new';
+  reviewingBookmarkIndex = i;
+  reviewingBookmarkRef = bookmarks[i];
+  pendingStart = s;
+  pendingEnd = e;
+  pendingSpeaker = null;
+  pendingStage = 'boundary';
+  lastBoundaryTouched = 'end';
+  editSessionSnapshotTaken = false;
+  const estimated = autoEstimateSpeaker();
+  if (estimated) pendingStage = 'speaker-set';
+  startLoopForPending();
+  focusOnPending();
+  updatePendingBanner();
+  if (estimated) document.getElementById('pending-text-input').focus();
+  setMsg(`북마크 정리 중 (남은 ${bookmarks.length}개)${estimated ? ' — 화자 ' + pendingSpeaker + ' 자동추정됨' : ''} — 드래그/I,O로 경계`);
+}
+function focusOnPending() {
+  const span = pendingEnd - pendingStart;
+  detailWindowDur = clamp(span / 0.6, 1, waveDuration || span / 0.6 || 8);
+  setDetailWindow(pendingStart - (detailWindowDur - span) / 2);
+}
+// 행 클릭 시 호출 — 구간이 지금 화면 안에 이미 다 들어오면 사용자가 맞춰둔 줌을 존중해
+// 배율은 그대로 두고 가운데로만 옮긴다. 안 들어오면(구간이 화면보다 길거나 창 밖에 있으면)
+// 배율까지 구간길이*1.25로 넓혀서 전체가 보이게 한다 — 전엔 배율을 안 건드려서 긴 구간을
+// 클릭하면 시작/끝 경계가 화면 밖으로 나가 안 보이는 문제가 있었다.
+function centerOnPending() {
+  const span = pendingEnd - pendingStart;
+  const currentEnd = detailWindowStart + detailWindowDur;
+  if (pendingStart < detailWindowStart || pendingEnd > currentEnd) {
+    if (span > detailWindowDur * 0.86) {
+      detailWindowDur = clamp(span * 1.25, 0.5, waveDuration || span * 1.25);
+    }
+  }
+  setDetailWindow(pendingStart - (detailWindowDur - span) / 2);
+}
+
+function selectRow(i) {
+  if (pendingStage !== 'idle') { setMsg('먼저 지금 하던 것을 끝내거나 Escape로 취소하세요.', true); return; }
+  const seg = segments[i];
+  if (!seg) return;
+  pendingMode = 'edit';
+  editingIndex = i;
+  selectedRowIndex = i;
+  pendingStart = seg.start;
+  pendingEnd = seg.end;
+  pendingStage = 'boundary';
+  lastBoundaryTouched = 'end';
+  editSessionSnapshotTaken = false;
+  loopActive = false; // 클릭만으로는 재생하지 않는다 — Space를 눌러야 소리가 남
+  centerOnPending();
+  updatePendingBanner();
+  renderSegments();
+  setMsg(`행 ${i + 1} 선택됨 — 핸들 드래그/I,O로 경계 조정, Space로 재생, Esc로 해제`);
+}
+
+function commitEditFromPending() {
+  const obj = segments[editingIndex];
+  if (!obj) return;
+  if (!editSessionSnapshotTaken) { pushUndo(); editSessionSnapshotTaken = true; }
+  obj.start = pendingStart; obj.end = pendingEnd;
+  segments.sort((a, b) => a.start - b.start);
+  editingIndex = segments.indexOf(obj);
+  selectedRowIndex = editingIndex;
+  renderSegments();
+  saveState();
+}
+
+// 텍스트 칸(contenteditable)은 <textarea>가 아니라 selectionStart가 없으므로 window.getSelection()으로
+// 캐럿 위치를 읽는다. segment 객체 참조를 키로 보관해야 정렬/삭제로 배열 인덱스가 밀려도 항상
+// 올바른 행을 가리킨다(배열 인덱스를 키로 쓰면 hwon 원본처럼 정렬 후 캐럿이 엉뚱한 행에 붙는다).
+const textCaretPositions = new Map(); // segment 객체 참조 → 마지막으로 클릭/편집한 텍스트 커서 위치
+function getCaretOffsetInCell(td) {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const range = sel.getRangeAt(0);
+  if (!td.contains(range.startContainer)) return null;
+  if (range.startContainer.nodeType === Node.TEXT_NODE) return range.startOffset;
+  return 0; // 셀이 비어 컨테이너가 td 자체인 경우 등 — 시작 지점으로 근사
+}
+function rememberTextCaret(e) {
+  const td = e.target.closest('td[contenteditable="true"][data-field="text"]');
+  if (!td) return;
+  const seg = segments[parseInt(td.dataset.idx, 10)];
+  if (!seg) return;
+  const offset = getCaretOffsetInCell(td);
+  if (offset != null) textCaretPositions.set(seg, offset);
+}
+document.getElementById('segment-body').addEventListener('click', rememberTextCaret);
+document.getElementById('segment-body').addEventListener('keyup', rememberTextCaret);
+
+// ── 가위로 자르기: 재생 위치 + 텍스트 커서 위치 기준으로 선택된 행을 둘로 나눈다 ──
+// 캐럿 위치를 모르면(텍스트 칸을 클릭한 적이 없으면) 예전처럼 원본 텍스트를 양쪽에 그대로
+// 복사해두고 사용자가 직접 나눠서 편집하도록 한다(source: 'manual'로 표시해 검수 대상임을 알림).
+function cutPendingAtPlayhead() {
+  if (pendingMode !== 'edit' || editingIndex == null) return;
+  const obj = segments[editingIndex];
+  if (!obj) return;
+  const active = getActiveTime();
+  if (!active) { setMsg('먼저 파형을 클릭해 자를 위치로 재생 헤드를 옮기세요.', true); return; }
+  const t = active.t;
+  const MIN_PIECE = 0.15;
+  if (t <= obj.start + MIN_PIECE || t >= obj.end - MIN_PIECE) {
+    setMsg('자를 지점이 구간 경계에 너무 가깝습니다 — 안쪽에서 다시 시도하세요.', true);
+    return;
+  }
+  pushUndo();
+  const text = obj.text || '';
+  const hasCaret = textCaretPositions.has(obj);
+  const caret = hasCaret ? clamp(textCaretPositions.get(obj), 0, text.length) : null;
+  const leftText = hasCaret ? text.slice(0, caret).trim() : text;
+  const rightText = hasCaret ? text.slice(caret).trim() : text;
+  const newSeg = { speaker: obj.speaker, start: t, end: obj.end, text: rightText, source: 'manual' };
+  obj.end = t;
+  obj.text = leftText;
+  obj.source = 'manual';
+  segments.splice(editingIndex + 1, 0, newSeg);
+  textCaretPositions.delete(obj); // 다음 편집에서 옛 캐럿 위치와 헷갈리지 않게 정리
+  resetPending();
+  recomputeSpeakerList();
+  renderSegments();
+  saveState();
+  setMsg(hasCaret
+    ? `${fmt(t)} 지점에서 텍스트 커서 위치 기준으로 둘로 잘랐습니다.`
+    : `${fmt(t)} 지점에서 둘로 잘랐습니다 — 텍스트 칸을 먼저 클릭해 커서를 두면 그 위치에서 나눌 수 있습니다. 지금은 원본이 두 행에 그대로 복사됐으니 나눠서 정리하세요.`);
+}
+
+function finalizePending(text) {
+  if (pendingMode !== 'new' || pendingStage !== 'speaker-set') return;
+  pushUndo();
+  const seg = { speaker: pendingSpeaker, start: pendingStart, end: pendingEnd, text: text, source: 'manual' };
+  segments.push(seg);
+  segments.sort((a, b) => a.start - b.start);
+  if (!speakerList.includes(seg.speaker)) speakerList.push(seg.speaker);
+  const doneIndex = bookmarks.indexOf(reviewingBookmarkRef);
+  if (doneIndex !== -1) bookmarks.splice(doneIndex, 1);
+  renderSegments(seg);
+  updateBookmarkUI();
+  saveState();
+  setMsg(`행 추가됨: 화자${pendingSpeaker} ${fmt(seg.start)}~${fmt(seg.end)} "${text}"`);
+  resetPending();
+  if (bookmarks.length > 0) reviewBookmarkAt(Math.min(Math.max(doneIndex, 0), bookmarks.length - 1));
+}
+function discardBookmark() {
+  if (pendingMode !== 'new') return;
+  pushUndo();
+  const doneIndex = bookmarks.indexOf(reviewingBookmarkRef);
+  if (doneIndex !== -1) bookmarks.splice(doneIndex, 1);
+  updateBookmarkUI();
+  saveState();
+  setMsg('이 북마크를 버렸습니다 (오탐).');
+  resetPending();
+  if (bookmarks.length > 0) reviewBookmarkAt(Math.min(Math.max(doneIndex, 0), bookmarks.length - 1));
+}
+function resetPending() {
+  stopLoop();
+  pendingMode = null; pendingStage = 'idle';
+  pendingStart = null; pendingEnd = null; pendingSpeaker = null;
+  editingIndex = null; selectedRowIndex = null; reviewingBookmarkIndex = null; reviewingBookmarkRef = null;
+  editSessionSnapshotTaken = false;
+  updatePendingBanner();
+  renderSegments();
+  drawDetail(); drawMinimap();
+}
+function updatePendingBanner() {
+  const banner = document.getElementById('pending-banner');
+  const summary = document.getElementById('pending-summary');
+  const input = document.getElementById('pending-text-input');
+  const cutBtn = document.getElementById('cut-here-btn');
+  if (pendingStage === 'idle') { banner.classList.remove('active'); input.style.display = 'none'; cutBtn.style.display = 'none'; updateHint(); return; }
+  banner.classList.add('active');
+  const modeLabel = pendingMode === 'edit' ? `행 ${editingIndex + 1} 재지정` : `북마크 정리 (남은 ${bookmarks.length})`;
+  let msg = '';
+  if (pendingStage === 'boundary') msg = `[${modeLabel}] ${fmt(pendingStart)} ~ ${fmt(pendingEnd)} — 대상:${lastBoundaryTouched === 'start' ? 'start' : 'end'}` + (pendingMode === 'new' ? ' · 1~5 화자' : ' · Esc로 완료');
+  else if (pendingStage === 'speaker-set') msg = `[${modeLabel}] 화자 ${pendingSpeaker} — L(웃음) 또는 텍스트+Enter`;
+  summary.textContent = msg;
+  input.style.display = (pendingStage === 'speaker-set') ? '' : 'none';
+  cutBtn.style.display = (pendingMode === 'edit') ? '' : 'none';
+  updateHint();
+}
+function markStartNow() {
+  if (pendingStage === 'idle') return;
+  const active = getActiveTime();
+  if (!active) return;
+  pendingStart = active.t;
+  lastBoundaryTouched = 'start';
+  afterBoundaryChange();
+}
+function markEndNow() {
+  if (pendingStage === 'idle') return;
+  const active = getActiveTime();
+  if (!active) return;
+  pendingEnd = active.t;
+  lastBoundaryTouched = 'end';
+  afterBoundaryChange();
+}
+function nudgeBoundary(delta) {
+  if (pendingStage === 'idle') return;
+  if (lastBoundaryTouched === 'start') pendingStart = Math.max(0, pendingStart + delta);
+  else pendingEnd = Math.max(0, pendingEnd + delta);
+  afterBoundaryChange();
+}
+function afterBoundaryChange() {
+  if (pendingEnd <= pendingStart) pendingEnd = pendingStart + 0.1;
+  updatePendingBanner();
+  drawDetail();
+  if (pendingMode === 'edit') commitEditFromPending();
+}
+function setPendingSpeaker(num) {
+  if (pendingMode !== 'new' || (pendingStage !== 'boundary' && pendingStage !== 'speaker-set')) return;
+  pendingSpeaker = resolveSpeakerKey(num);
+  pendingStage = 'speaker-set';
+  updatePendingBanner();
+  document.getElementById('pending-text-input').focus();
+}
+function insertPaletteText(text) {
+  const input = document.getElementById('pending-text-input');
+  input.style.display = '';
+  if (document.activeElement !== input) input.focus();
+  const start = input.selectionStart != null ? input.selectionStart : input.value.length;
+  const end = input.selectionEnd != null ? input.selectionEnd : input.value.length;
+  const before = input.value.slice(0, start);
+  const after = input.value.slice(end);
+  const sep = (before && !before.endsWith(' ')) ? ' ' : '';
+  input.value = before + sep + text + after;
+  const cursor = (before + sep + text).length;
+  input.setSelectionRange(cursor, cursor);
+}
+
+// ── 전체 삭제 ─────────────────────────────────────────
+function clearAll() {
+  if (segments.length === 0 && bookmarks.length === 0) { setMsg('이미 비어 있습니다.'); return; }
+  if (!confirm(`전체 ${segments.length}개 행과 ${bookmarks.length}개 북마크를 모두 삭제할까요? Ctrl+Z로 되돌릴 수 있습니다.`)) return;
+  pushUndo();
+  segments = []; bookmarks = []; speakerList = [];
+  resetPending();
+  updateBookmarkUI();
+  saveState();
+  setMsg('전체 삭제했습니다.');
+}
+
+// ── 키보드 ────────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.key.toLowerCase() === 's') { e.preventDefault(); downloadJsonSnapshot(); return; } // 브라우저 기본 "페이지 저장" 대신 항상 가로챔
+
+  const tag = (e.target.tagName || '').toLowerCase();
+  const inputType = (e.target.type || '').toLowerCase();
+  // 체크박스는 "타이핑 중"이 아니므로 여기서 걸러지면 안 됨 — 안 걸러지면 클릭 후 남은 포커스 때문에
+  // Space가 재생 대신 체크박스만 다시 토글해버리는 문제가 있었음.
+  const editing = tag === 'textarea' || e.target.isContentEditable ||
+    (tag === 'input' && inputType !== 'checkbox');
+
+  if (e.target.id === 'pending-text-input') {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const val = e.target.value.trim();
+      if (val) finalizePending(val); // 입력한 그대로 사용 — 괄호를 자동으로 씌우지 않음
+      return;
+    }
+    if (e.key === 'Escape') { e.preventDefault(); resetPending(); return; }
+    if (pendingMode === 'new' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      if (['1', '2', '3', '4', '5'].includes(e.key)) { e.preventDefault(); setPendingSpeaker(e.key); return; }
+      if (pendingStage === 'speaker-set') {
+        const k = e.key.toLowerCase();
+        if (k === 'l') { e.preventDefault(); insertPaletteText('(웃음)'); return; }
+        if (PALETTE[k]) { e.preventDefault(); insertPaletteText(PALETTE[k]); return; }
+      }
+    }
+    return; // 그 외 키는 입력창에 평범하게 타이핑됨
+  }
+  if (document.getElementById('help-overlay').classList.contains('open')) {
+    if (e.key === 'Escape' || e.key === '?') { e.preventDefault(); toggleHelp(); }
+    return;
+  }
+  if (editing) return;
+
+  if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); performUndo(); return; }
+  if (e.key === '?') { e.preventDefault(); toggleHelp(); return; }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    if (document.querySelector('.dropdown.open')) { closeDrawers(); return; }
+    if (pendingStage !== 'idle') resetPending(); else cancelBookmarkPending();
+    return;
+  }
+  if (e.code === 'Space' || e.key === ' ') { e.preventDefault(); handleSpaceToggle(); return; }
+  if (e.key.toLowerCase() === 'v') { e.preventDefault(); toggleSource(); return; }
+  if (e.key.toLowerCase() === 'm' && pendingStage === 'idle') { e.preventDefault(); markBookmark(); return; }
+  if (e.key.toLowerCase() === 'n' && pendingStage === 'idle') { e.preventDefault(); reviewNextBookmark(); return; }
+  if (e.key.toLowerCase() === 'x' && pendingMode === 'new') { e.preventDefault(); discardBookmark(); return; }
+  if (e.key === '[') { e.preventDefault(); lastBoundaryTouched = 'start'; updatePendingBanner(); return; }
+  if (e.key === ']') { e.preventDefault(); lastBoundaryTouched = 'end'; updatePendingBanner(); return; }
+  if (pendingStage !== 'idle' && e.key.toLowerCase() === 'i') { e.preventDefault(); markStartNow(); return; }
+  if (pendingStage !== 'idle' && e.key.toLowerCase() === 'o') { e.preventDefault(); markEndNow(); return; }
+  if (['1', '2', '3', '4', '5'].includes(e.key)) { e.preventDefault(); setPendingSpeaker(e.key); return; }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    e.preventDefault();
+    const dir = e.key === 'ArrowLeft' ? -1 : 1;
+    const step = e.ctrlKey ? 5 : (e.shiftKey ? 1 : 0.1);
+    if (pendingStage !== 'idle') { nudgeBoundary(dir * step); }
+    else if (isYoutubePlaying()) { playerObj.seekTo(Math.max(0, playerObj.getCurrentTime() + dir * step), true); }
+    else if (waveAudioEl) { waveAudioEl.currentTime = Math.max(0, waveAudioEl.currentTime + dir * step); drawDetail(); }
+  }
+});
+document.addEventListener('mousedown', (e) => {
+  if (e.target.closest('.dropdown') || e.target.closest('#import-toggle') || e.target.closest('#bookmark-toggle')) return;
+  closeDrawers();
+});
+
+// ── TSV 불러오기 / 내보내기 ───────────────────────────
+function importTsv() {
+  const raw = document.getElementById('import-textarea').value;
+  const lines = raw.split(/\r?\n/).filter(l => l.trim().length > 0);
+  if (lines.length === 0) { setMsg('붙여넣은 내용이 없습니다.', true); return; }
+  const parsed = [];
+  for (const line of lines) {
+    const cols = line.split('\t');
+    if (cols[0] === 'speaker' && cols[1] === 'start') continue;
+    let speaker, start, end, text;
+    if (cols.length >= 5) { speaker = cols[0]; start = cols[1]; end = cols[2]; text = cols.slice(4).join(' '); }
+    else if (cols.length === 4) { speaker = cols[0]; start = cols[1]; end = cols[2]; text = cols[3]; }
+    else if (cols.length === 3) { speaker = ''; start = cols[0]; end = cols[1]; text = cols[2]; }
+    else continue;
+    const s = parseTimeStr(start), e = parseTimeStr(end);
+    if (isNaN(s) || isNaN(e)) continue;
+    parsed.push({ speaker: (speaker || '').trim(), start: s, end: e, text: (text || '').trim(), source: 'stt' });
+  }
+  if (parsed.length === 0) { setMsg('파싱된 행이 없습니다 — 탭으로 구분된 형식인지 확인하세요.', true); return; }
+  pushUndo();
+  segments = parsed;
+  segments.sort((a, b) => a.start - b.start);
+  recomputeSpeakerList();
+  renderSegments();
+  saveState();
+  setMsg(parsed.length + '개 행 불러옴 (기존 내용 교체됨).');
+  closeDrawers();
+}
+// ── CSV 파일 불러오기 (RFC4180 상태머신 — 따옴표 안 콤마/개행/""도 정확히 처리) ──
+function parseCSVText(text) {
+  const rows = [];
+  let row = [], field = '', quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else quoted = false; }
+      else field += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ',') { row.push(field); field = ''; }
+    else if (ch === '\n') {
+      row.push(field); field = '';
+      if (row.some(v => String(v).trim() !== '')) rows.push(row);
+      row = [];
+    } else if (ch !== '\r') field += ch;
+  }
+  row.push(field);
+  if (row.some(v => String(v).trim() !== '')) rows.push(row);
+  return rows;
+}
+function normalizeCsvHeader(value) {
+  return String(value || '').replace(/^﻿/, '').trim().toLowerCase()
+    .replace(/\s*\([^)]*\)\s*$/g, '') // "start (hh:mm:ss.mmm)"처럼 뒤에 붙은 단위 설명 제거
+    .replace(/[\s_-]+/g, '');
+}
+function findHeaderIndex(headers, aliases) {
+  const normalized = headers.map(normalizeCsvHeader);
+  for (const alias of aliases) {
+    const idx = normalized.indexOf(normalizeCsvHeader(alias));
+    if (idx >= 0) return idx;
+  }
+  return -1;
+}
+async function loadCsvFile(file) {
+  try {
+    const text = await file.text();
+    const rows = parseCSVText(text);
+    if (rows.length < 2) throw new Error('데이터 행이 없습니다.');
+    const headers = rows[0];
+    const startIdx = findHeaderIndex(headers, ['start', 'start_time', '시작', '시작시간']);
+    const endIdx = findHeaderIndex(headers, ['end', 'end_time', '종료', '종료시간']);
+    const speakerIdx = findHeaderIndex(headers, ['speaker', '화자']);
+    const sttIdx = findHeaderIndex(headers, ['stt', 'text', 'transcript', '전사', '문장']);
+    if (startIdx < 0 || endIdx < 0) throw new Error('start/end 컬럼을 찾을 수 없습니다.');
+    const parsed = [];
+    let skipped = 0;
+    for (let r = 1; r < rows.length; r++) {
+      const cols = rows[r];
+      const s = parseTimeStr(cols[startIdx]), e = parseTimeStr(cols[endIdx]);
+      if (isNaN(s) || isNaN(e) || e < s) { skipped++; continue; }
+      parsed.push({
+        speaker: speakerIdx >= 0 ? String(cols[speakerIdx] ?? '').trim() : '', // 원본값 그대로 — speaker1~6 강제 안 함
+        start: s, end: e,
+        text: sttIdx >= 0 ? String(cols[sttIdx] ?? '').trim() : '',
+        source: 'stt'
+      });
+    }
+    if (parsed.length === 0) throw new Error('유효한 start/end가 있는 행을 찾지 못했습니다.');
+    pushUndo();
+    segments = parsed;
+    segments.sort((a, b) => a.start - b.start);
+    recomputeSpeakerList();
+    renderSegments();
+    saveState();
+    setMsg(`${file.name} · ${parsed.length}개 행 불러옴${skipped ? ` · ${skipped}개 행 제외` : ''} (기존 내용 교체됨).`);
+    closeDrawers();
+  } catch (err) {
+    setMsg('CSV 불러오기 실패: ' + err.message, true);
+  }
+}
+function segToRow(s) {
+  return [s.speaker || '', fmt(s.start), fmt(s.end), (s.end - s.start).toFixed(3) + 's', s.text || ''].join('\t');
+}
+function copyToClipboard(tsv, successMsg) {
+  const done = (ok) => setMsg(ok ? successMsg : '복사 실패 — 표를 드래그로 직접 선택해 복사하세요.', !ok);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(tsv).then(() => done(true)).catch(() => fallbackCopy(tsv, done));
+  } else { fallbackCopy(tsv, done); }
+}
+function fallbackCopy(text, done) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) {}
+  document.body.removeChild(ta);
+  done(ok);
+}
+function copyAll() {
+  if (segments.length === 0) { setMsg('복사할 행이 없습니다.', true); return; }
+  copyToClipboard(segments.map(segToRow).join('\n'), segments.length + '개 행 복사됨 — 시트에 붙여넣기(Ctrl+V) 하세요.');
+}
+function copyOne(i) {
+  const s = segments[i]; if (!s) return;
+  copyToClipboard(segToRow(s), (i + 1) + '번 행 복사됨.');
+}
+
+// ── 파일로 저장 / 불러오기 (localStorage 자동저장과 별개인 백업용) ──
+function timestampForFilename() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function downloadJsonSnapshot() {
+  const payload = { segments, bookmarks, savedAt: new Date().toISOString() };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const name = `stt-workbench-${timestampForFilename()}.json`;
+  triggerDownload(blob, name);
+  setMsg(`${name}로 저장했습니다 (${segments.length}개 행, ${bookmarks.length}개 북마크).`);
+}
+async function loadJsonSnapshot(file) {
+  try {
+    const parsedData = JSON.parse(await file.text());
+    if (!Array.isArray(parsedData.segments)) throw new Error('segments 배열이 없습니다.');
+    pushUndo();
+    segments = parsedData.segments;
+    bookmarks = Array.isArray(parsedData.bookmarks) ? parsedData.bookmarks : [];
+    resetPending();
+    recomputeSpeakerList();
+    renderSegments();
+    updateBookmarkUI();
+    saveState();
+    setMsg(`${file.name} 불러옴 (${segments.length}개 행, ${bookmarks.length}개 북마크) — Ctrl+Z로 되돌릴 수 있습니다.`);
+    closeDrawers();
+  } catch (err) {
+    setMsg('JSON 불러오기 실패: ' + err.message, true);
+  }
+}
+function csvEscape(v, allowFormula) {
+  let s = String(v == null ? '' : v);
+  // Excel/구글시트가 수식으로 해석하는 선두 문자를 무력화 (CSV 인젝션 방어) — STT 텍스트가
+  // "-그러니까"처럼 하이픈으로 시작하거나 악의적 =cmd|... 페이로드가 들어와도 안전하게 만든다.
+  // 여러 외주 작업자가 만든 파일이 서로 오가는 툴이라 실제 위험 경로다.
+  if (!allowFormula && /^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+// Excel이 00:00:04.948을 시간 서식으로 자동 변환해 축약 표시(0:00:04)하며 밀리초를 뭉개는 것을
+// 막기 위해 텍스트 강제 수식으로 감싼다 — 화면에는 수식이 아니라 문자열만 그대로 보인다.
+function excelSafeTimestamp(seconds) { return `="${fmt(seconds)}"`; }
+function downloadCsv(excelMode) {
+  if (segments.length === 0) { setMsg('내보낼 행이 없습니다.', true); return; }
+  const header = ['번호', '화자', 'start (hh:mm:ss.mmm)', 'end (hh:mm:ss.mmm)', 'duration', 'stt'];
+  const lines = [header.join(',')];
+  segments.forEach((s, i) => {
+    const startCell = excelMode ? excelSafeTimestamp(s.start) : fmt(s.start);
+    const endCell = excelMode ? excelSafeTimestamp(s.end) : fmt(s.end);
+    lines.push([
+      String(i + 1),
+      csvEscape(s.speaker || ''),
+      csvEscape(startCell, excelMode),
+      csvEscape(endCell, excelMode),
+      csvEscape((s.end - s.start).toFixed(3)),
+      csvEscape(s.text || '')
+    ].join(','));
+  });
+  const csv = '\uFEFF' + lines.join('\r\n'); // BOM -- Excel Korean fix
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const name = `stt-workbench-${timestampForFilename()}${excelMode ? '-excel' : ''}.csv`;
+  triggerDownload(blob, name);
+  setMsg(`${name}로 저장했습니다 (${segments.length}개 행)${excelMode ? ' · Excel용 시간 서식' : ''}.`);
+}
+
+// ── 테이블 렌더링 ─────────────────────────────────────
+function renderSegments(highlightSeg) {
+  const body = document.getElementById('segment-body');
+  body.innerHTML = '';
+  segments.forEach((s, i) => {
+    const tr = document.createElement('tr');
+    tr.className = 'segrow mono ' + (s.source === 'manual' ? 'manual-row' : 'stt-row') +
+      (s === highlightSeg ? ' new-row' : '') + (i === selectedRowIndex ? ' row-selected' : '');
+    tr.innerHTML =
+      `<td><input type="checkbox" class="merge-select-cb" ${selectedForMerge.has(s) ? 'checked' : ''} onclick="event.stopPropagation(); toggleMergeSelect(${i})"></td>` +
+      `<td class="mono">${i === selectedRowIndex ? '<span class="edit-badge">✎ 수정 중</span>' : ''}${i + 1}</td>` +
+      `<td><select class="mono" data-idx="${i}" onchange="onSpeakerSelectChange(this)">${buildSpeakerOptionsHtml(s.speaker)}</select></td>` +
+      `<td>${fmt(s.start)}</td><td>${fmt(s.end)}</td><td>${(s.end - s.start).toFixed(3)}s</td>` +
+      `<td contenteditable="true" data-idx="${i}" data-field="text" style="font-family:inherit;">${escapeHtml(s.text || '')}</td>` +
+      `<td class="row-actions">
+         <button class="ghost" onclick="event.stopPropagation(); copyOne(${i})">복사</button>
+         <button class="danger" onclick="event.stopPropagation(); deleteAt(${i})">삭제</button>
+       </td>`;
+    tr.addEventListener('click', (e) => {
+      if (e.target.closest('button') || e.target.closest('select') || e.target.isContentEditable) return;
+      selectRow(i);
+    });
+    body.appendChild(tr);
+  });
+  const selectAllCb = document.getElementById('select-all-checkbox');
+  if (selectAllCb) selectAllCb.checked = segments.length > 0 && selectedForMerge.size === segments.length;
+  updateMergeSelectionUi();
+}
+function toggleMergeSelect(i) {
+  const seg = segments[i];
+  if (!seg) return;
+  if (selectedForMerge.has(seg)) selectedForMerge.delete(seg);
+  else selectedForMerge.add(seg);
+  const selectAllCb = document.getElementById('select-all-checkbox');
+  if (selectAllCb) selectAllCb.checked = segments.length > 0 && selectedForMerge.size === segments.length;
+  updateMergeSelectionUi();
+}
+function toggleSelectAllForMerge(checked) {
+  selectedForMerge = checked ? new Set(segments) : new Set();
+  renderSegments();
+}
+function clearMergeSelection() {
+  selectedForMerge.clear();
+  renderSegments();
+}
+function updateMergeSelectionUi() {
+  const btn = document.getElementById('merge-selected-btn');
+  if (!btn) return;
+  const n = selectedForMerge.size;
+  btn.textContent = `선택 합치기 (${n})`;
+  btn.disabled = n < 2;
+}
+function escapeHtml(str) {
+  // "와 '도 반드시 이스케이프한다 — buildSpeakerOptionsHtml()이 이 결과를 value="..." 속성에
+  // 그대로 꽂는데, 화자명(CSV/TSV에서 그대로 들어옴)에 따옴표가 있으면 속성을 탈출해
+  // onclick 등 이벤트 핸들러를 주입할 수 있었다.
+  return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function buildSpeakerOptionsHtml(current) {
+  const list = speakerList.slice();
+  if (current && !list.includes(current)) list.unshift(current);
+  const emptyOpt = current ? '' : '<option value="" selected>—</option>';
+  const opts = list.map(sp => `<option value="${escapeHtml(sp)}"${sp === current ? ' selected' : ''}>${escapeHtml(sp)}</option>`).join('');
+  return emptyOpt + opts + '<option value="__new__">+ 새 화자</option>';
+}
+function onSpeakerSelectChange(sel) {
+  const idx = parseInt(sel.dataset.idx, 10);
+  if (!segments[idx]) return;
+  let val = sel.value;
+  if (val === '__new__') {
+    const typed = (prompt('새 화자 라벨을 입력하세요 (예: F)') || '').trim();
+    if (!typed) { renderSegments(); return; } // 취소 -> 드롭다운을 원래 값으로 되돌려 다시 그림
+    val = typed;
+  }
+  if (segments[idx].speaker === val) return;
+  pushUndo();
+  segments[idx].speaker = val;
+  recomputeSpeakerList();
+  renderSegments();
+  saveState();
+}
+document.getElementById('segment-body').addEventListener('blur', (e) => {
+  const td = e.target;
+  if (!td.matches('td[contenteditable="true"]')) return; // 텍스트 칸만 해당 — 화자는 드롭다운(onSpeakerSelectChange)에서 처리
+  const idx = parseInt(td.dataset.idx, 10), field = td.dataset.field;
+  if (segments[idx]) {
+    const newVal = td.textContent.trim();
+    if (segments[idx][field] !== newVal) {
+      pushUndo();
+      segments[idx][field] = newVal;
+      saveState();
+    }
+  }
+}, true);
+
+function deleteAt(i) {
+  if (!segments[i]) return;
+  pushUndo();
+  if (editingIndex === i) resetPending();
+  segments.splice(i, 1);
+  renderSegments();
+  saveState();
+}
+
+// ── 재생 위치 하이라이트 (노래방 가사식) + 조건부 자동 스크롤 ──────────
+// 기본은 자동 스크롤 ON, 사용자가 물리적으로 휠/터치/포인터 조작을 하면 그 순간 OFF,
+// 재생을 다시 시작하면 ON으로 복귀한다. scroll 이벤트로 감지하면 scrollIntoView()가
+// 일으킨 스크롤도 똑같이 잡혀 자동으로 자기 자신을 꺼버리므로, 원인(wheel 등)을 듣는다.
+let lastHighlightKey = '';
+let autoScrollEnabled = true;
+document.getElementById('table-wrap').addEventListener('wheel', () => {
+  if (autoScrollEnabled) { autoScrollEnabled = false; setMsg('자동 스크롤 해제 — 재생을 다시 시작하면 자동으로 복귀합니다.'); }
+}, { passive: true });
+function updateHighlight(t) {
+  const body = document.getElementById('segment-body');
+  const rows = body.children;
+  const matchedIdx = [];
+  for (let i = 0; i < segments.length; i++) {
+    const hit = t >= segments[i].start && t < segments[i].end;
+    if (rows[i]) rows[i].classList.toggle('now-playing', hit);
+    if (hit) matchedIdx.push(i);
+  }
+  const key = matchedIdx.join(',');
+  if (key !== lastHighlightKey) {
+    lastHighlightKey = key;
+    // 하이라이트 대상이 바뀐 프레임에만 스크롤한다 — 매 프레임(초당 60번) 부르면 브라우저가
+    // 스크롤 위치를 계속 재조정해 화면이 떨린다. 겹침 툴이라 동시에 여러 행이 잡힐 수 있어
+    // 맨 위(시간순 첫) 행을 따라간다.
+    if (autoScrollEnabled && matchedIdx.length > 0 && rows[matchedIdx[0]]) {
+      rows[matchedIdx[0]].scrollIntoView({ block: 'nearest' });
+    }
+  }
+}
+
+// ── YouTube ───────────────────────────────────────────
+function parseVideoId(url) {
+  try {
+    const u = new URL(url.trim());
+    if (u.hostname.includes('youtu.be')) return u.pathname.slice(1).split('/')[0];
+    if (u.pathname.startsWith('/shorts/')) return u.pathname.split('/')[2];
+    if (u.pathname.startsWith('/live/')) return u.pathname.split('/')[2];
+    if (u.pathname.startsWith('/embed/')) return u.pathname.split('/')[2];
+    if (u.searchParams.get('v')) return u.searchParams.get('v');
+  } catch (e) {}
+  return null;
+}
+function loadFromInput() {
+  const url = document.getElementById('url-input').value;
+  const id = parseVideoId(url);
+  if (!id) { setMsg('URL을 인식하지 못했습니다.', true); return; }
+  setMsg('videoId 인식됨: ' + id);
+  if (!apiReady) { setMsg('YouTube API 로딩 중...'); setTimeout(loadFromInput, 500); return; }
+  if (playerObj) { playerObj.loadVideoById(id); playerObj.pauseVideo(); return; }
+  const playerVars = { playsinline: 1 };
+  if (location.protocol === 'http:' || location.protocol === 'https:') playerVars.origin = window.location.origin;
+  playerObj = new YT.Player('player', {
+    videoId: id, playerVars,
+    events: {
+      onReady: () => { setMsg('플레이어 준비 완료.'); playerObj.pauseVideo(); },
+      onStateChange: (e) => { if (e.data === YT.PlayerState.PLAYING) { lastSource = 'youtube'; if (isWavePlaying()) waveAudioEl.pause(); } },
+      onError: (e) => {
+        const codes = { 2: '잘못된 videoId', 5: 'HTML5 플레이어 오류', 100: '영상 삭제/비공개', 101: '임베드 차단', 150: '임베드 차단', 153: '플레이어 구성 오류 (file://로 열면 발생 — 로컬 서버로 여세요)' };
+        setMsg('재생 불가 — 코드 ' + e.data + ': ' + (codes[e.data] || '알 수 없음'), true);
+      }
+    }
+  });
+}
+function onYouTubeIframeAPIReady() { apiReady = true; }
+const ytTag = document.createElement('script');
+ytTag.src = 'https://www.youtube.com/iframe_api';
+document.head.appendChild(ytTag);
+
+// ── 파형 (기존 데모 로직 재사용) ──────────────────────
+async function loadAudioFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  await loadAudioFileObj(file);
+  saveAudioForRestore(file); // 실패해도 무시 — 다음 새로고침 때 복원 버튼이 안 뜰 뿐 지금 작업엔 지장 없음
+}
+async function loadAudioFileObj(file) {
+  setMsg('오디오 디코딩 중...');
+  try {
+    const buf = await file.arrayBuffer();
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const audioBuffer = await ctx.decodeAudioData(buf);
+    waveChannelData = audioBuffer.getChannelData(0);
+    waveSampleRate = audioBuffer.sampleRate;
+    waveDuration = audioBuffer.duration;
+    ctx.close();
+    waveAudioEl = document.getElementById('wave-audio');
+    waveAudioEl.src = URL.createObjectURL(file);
+    waveAudioEl.playbackRate = playbackRate;
+    waveAudioEl.addEventListener('play', () => { lastSource = 'wave'; if (isYoutubePlaying()) playerObj.pauseVideo(); });
+    waveHasPlayed = false;
+    detailWindowStart = 0;
+    detailWindowDur = 8;
+    drawMinimap();
+    setDetailWindow(0);
+    // 큰 m4a/mp4 파일은 파형 디코딩(위 decodeAudioData)이 끝나도 <audio> 요소 자체가
+    // 탐색 가능해지기까지 몇 초 더 걸릴 수 있다 — 그 사이에 파형을 클릭해도 currentTime이
+    // 조용히 무시돼서 "클릭해도 반응 없음"으로 보이므로, 완전히 준비된 뒤에야 완료로 표시한다.
+    if (waveAudioEl.readyState < 1) {
+      setMsg(`오디오 처리 중... (${file.name})`);
+      await new Promise(resolve => {
+        const done = () => { waveAudioEl.removeEventListener('loadedmetadata', done); resolve(); };
+        waveAudioEl.addEventListener('loadedmetadata', done);
+        setTimeout(done, 10000); // 안전장치: 10초 넘으면 그냥 진행
+      });
+    }
+    setMsg(`로드 완료: ${file.name} — 길이 ${fmt(waveDuration)}`);
+  } catch (err) {
+    setMsg('디코딩 실패: ' + err.message, true);
+  }
+}
+
+// ── 오디오 IndexedDB 저장 → 새로고침 복원 (46MB급 파일을 매번 다시 고르는 마찰 제거) ──
+// localStorage 자동저장과 수명을 맞추려고 세션ID가 아니라 고정 키 하나만 쓴다 — hwon 원본은
+// sessionStorage 세션ID를 키로 써서 탭을 닫으면 오디오를 다시 못 찾는 문제가 있었다.
+// 자동으로 다시 디코딩하지 않고 확인 버튼만 띄운다 — 46MB 디코딩은 수 초가 걸리고
+// 다른 파일로 작업을 시작할 수도 있어서 강제로 기다리게 하면 안 된다.
+const AUDIO_DB_NAME = 'stt-workbench-audio-v1';
+const AUDIO_STORE_NAME = 'audio';
+const AUDIO_FIXED_KEY = 'current';
+function openAudioDB() {
+  return new Promise((resolve, reject) => {
+    if (!('indexedDB' in window)) { reject(new Error('IndexedDB 미지원')); return; }
+    const req = indexedDB.open(AUDIO_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(AUDIO_STORE_NAME)) db.createObjectStore(AUDIO_STORE_NAME, { keyPath: 'key' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('IndexedDB 열기 실패'));
+  });
+}
+async function saveAudioForRestore(file) {
+  try {
+    const db = await openAudioDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(AUDIO_STORE_NAME, 'readwrite');
+      tx.objectStore(AUDIO_STORE_NAME).put({
+        key: AUDIO_FIXED_KEY, blob: file,
+        meta: { name: file.name, type: file.type, size: file.size }, savedAt: Date.now()
+      });
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error || new Error('오디오 저장 실패'));
+    });
+    db.close();
+  } catch (err) {
+    // 저장 실패(용량 초과 등)해도 지금 작업은 정상 진행된다 — 콘솔에만 남기고 조용히 넘어간다.
+    console.warn('오디오 자동 저장 실패:', err);
+  }
+}
+async function getStoredAudio() {
+  try {
+    const db = await openAudioDB();
+    const result = await new Promise((resolve, reject) => {
+      const tx = db.transaction(AUDIO_STORE_NAME, 'readonly');
+      const req = tx.objectStore(AUDIO_STORE_NAME).get(AUDIO_FIXED_KEY);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error || new Error('오디오 읽기 실패'));
+    });
+    db.close();
+    return result;
+  } catch (err) {
+    return null;
+  }
+}
+async function restoreStoredAudio() {
+  const stored = await getStoredAudio();
+  const btn = document.getElementById('restore-audio-btn');
+  if (!stored || !stored.blob || !btn) return;
+  const meta = stored.meta || {};
+  const sizeMb = ((meta.size || 0) / 1024 / 1024).toFixed(1);
+  btn.textContent = `이전 오디오 복원 (${meta.name || '오디오'}, ${sizeMb}MB)`;
+  btn.style.display = '';
+  btn.onclick = async () => {
+    btn.style.display = 'none';
+    const file = new File([stored.blob], meta.name || 'restored-audio', { type: meta.type || stored.blob.type || 'audio/*' });
+    await loadAudioFileObj(file);
+  };
+}
+// globalTick()이 초당 60번 drawDetail()을 불러 재생 커서를 그리는데, 매번 computeBuckets가
+// 창 안의 샘플을 전부 훑으면(57MB wav 전체줌이면 수백만 개) 프레임마다 낭비가 크다 —
+// 창(start/end/width)이 실제로 안 바뀐 프레임에는 이전에 계산해둔 버킷을 그대로 재사용한다.
+let detailBucketCache = null; // { start, end, width, buckets }
+function getDetailBuckets(startSec, endSec, numBuckets) {
+  if (detailBucketCache && detailBucketCache.width === numBuckets &&
+      Math.abs(detailBucketCache.start - startSec) < 1e-6 &&
+      Math.abs(detailBucketCache.end - endSec) < 1e-6) {
+    return detailBucketCache.buckets;
+  }
+  const buckets = computeBuckets(startSec, endSec, numBuckets);
+  detailBucketCache = { start: startSec, end: endSec, width: numBuckets, buckets };
+  return buckets;
+}
+function computeBuckets(startSec, endSec, numBuckets) {
+  const startIdx = Math.max(0, Math.floor(startSec * waveSampleRate));
+  const endIdx = Math.min(waveChannelData.length, Math.ceil(endSec * waveSampleRate));
+  const span = Math.max(1, endIdx - startIdx);
+  const bucketSize = Math.max(1, Math.floor(span / numBuckets));
+  const buckets = new Float32Array(numBuckets);
+  for (let b = 0; b < numBuckets; b++) {
+    const s = startIdx + b * bucketSize, e = Math.min(endIdx, s + bucketSize);
+    let max = 0;
+    for (let i = s; i < e; i++) { const v = Math.abs(waveChannelData[i]); if (v > max) max = v; }
+    buckets[b] = max;
+  }
+  return buckets;
+}
+function drawWaveform(canvas, buckets, color) {
+  const dctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height, mid = h / 2;
+  dctx.fillStyle = '#020617'; dctx.fillRect(0, 0, w, h);
+  dctx.strokeStyle = color || '#14B8A6'; dctx.beginPath();
+  const stepX = w / buckets.length;
+  for (let i = 0; i < buckets.length; i++) {
+    const amp = Math.max(1, buckets[i] * (h / 2) * 0.95), x = i * stepX;
+    dctx.moveTo(x, mid - amp); dctx.lineTo(x, mid + amp);
+  }
+  dctx.stroke();
+}
+function canvasScale(canvas) { return canvas.width / (canvas.clientWidth || canvas.width); }
+function drawBookmarkTicks(canvas, windowStart, windowDur) {
+  const dctx = canvas.getContext('2d');
+  const s = canvasScale(canvas);
+  dctx.fillStyle = '#FACC15';
+  bookmarks.forEach(([bs, be]) => {
+    if (be < windowStart || bs > windowStart + windowDur) return;
+    const x1 = ((Math.max(bs, windowStart) - windowStart) / windowDur) * canvas.width;
+    const x2 = ((Math.min(be, windowStart + windowDur) - windowStart) / windowDur) * canvas.width;
+    dctx.fillRect(x1, 0, Math.max(2 * s, x2 - x1), 6 * s);
+  });
+  if (bookmarkPending != null && bookmarkPending >= windowStart && bookmarkPending <= windowStart + windowDur) {
+    const x = ((bookmarkPending - windowStart) / windowDur) * canvas.width;
+    dctx.fillStyle = '#F97316';
+    dctx.fillRect(x - s, 0, 2 * s, 10 * s);
+  }
+}
+function drawMinimap() {
+  if (!waveChannelData) return;
+  const canvas = document.getElementById('minimap-canvas');
+  drawWaveform(canvas, computeBuckets(0, waveDuration, canvas.width), '#334155');
+  const dctx = canvas.getContext('2d');
+  const x1 = (detailWindowStart / waveDuration) * canvas.width;
+  const x2 = ((detailWindowStart + detailWindowDur) / waveDuration) * canvas.width;
+  dctx.fillStyle = 'rgba(20,184,166,0.25)'; dctx.fillRect(x1, 0, Math.max(1, x2 - x1), canvas.height);
+  dctx.strokeStyle = '#14B8A6'; dctx.strokeRect(x1, 0, Math.max(1, x2 - x1), canvas.height);
+  drawBookmarkTicks(canvas, 0, waveDuration);
+}
+function setDetailWindow(startSec) {
+  if (!waveChannelData) return;
+  detailWindowStart = Math.max(0, Math.min(startSec, Math.max(0, waveDuration - detailWindowDur)));
+  drawDetail(); drawMinimap();
+}
+function setZoom(sec) {
+  detailWindowDur = sec === 'full' ? Math.max(0.25, waveDuration || 60) : sec;
+  setDetailWindow(detailWindowStart);
+}
+function pxToSec(px, canvasWidth) { return detailWindowStart + (px / canvasWidth) * detailWindowDur; }
+
+// 겹치는 세그먼트를 레인(층)으로 나눠 배치 — 겹침 작업 툴이라 겹침이 파형에서 바로 보여야 함
+function assignLanes(segs) {
+  const sorted = segs.map((s, idx) => ({ s, idx })).sort((a, b) => a.s.start - b.s.start);
+  const laneEnds = [];
+  const laneOf = new Array(segs.length).fill(0);
+  sorted.forEach(({ s, idx }) => {
+    let lane = laneEnds.findIndex(end => end <= s.start);
+    if (lane === -1) { lane = laneEnds.length; laneEnds.push(s.end); }
+    else laneEnds[lane] = s.end;
+    laneOf[idx] = lane;
+  });
+  return laneOf;
+}
+
+function drawDetail() {
+  const canvas = document.getElementById('detail-canvas');
+  const dctx = canvas.getContext('2d');
+  const scale = canvasScale(canvas);
+  if (!waveChannelData) { dctx.fillStyle = '#020617'; dctx.fillRect(0, 0, canvas.width, canvas.height); return; }
+  drawWaveform(canvas, getDetailBuckets(detailWindowStart, detailWindowStart + detailWindowDur, canvas.width), '#14B8A6');
+
+  const visible = segments.map((s, i) => ({ s, i })).filter(({ s, i }) => i !== editingIndex && s.end >= detailWindowStart && s.start <= detailWindowStart + detailWindowDur);
+  const laneOf = assignLanes(visible.map(v => v.s));
+  visible.forEach(({ s }, vi) => {
+    const x1 = ((s.start - detailWindowStart) / detailWindowDur) * canvas.width;
+    const x2 = ((s.end - detailWindowStart) / detailWindowDur) * canvas.width;
+    const y = canvas.height - (laneOf[vi] + 1) * 7 * scale;
+    dctx.fillStyle = 'rgba(20,184,166,0.35)'; dctx.fillRect(x1, y, Math.max(1, x2 - x1), 5 * scale);
+  });
+
+  if (pendingStage !== 'idle' && pendingStart != null) {
+    const inWindow = !(pendingEnd < detailWindowStart || pendingStart > detailWindowStart + detailWindowDur);
+    if (inWindow) {
+      const x1 = ((Math.min(pendingStart, pendingEnd) - detailWindowStart) / detailWindowDur) * canvas.width;
+      const x2 = ((Math.max(pendingStart, pendingEnd) - detailWindowStart) / detailWindowDur) * canvas.width;
+      dctx.fillStyle = 'rgba(56,189,248,0.22)'; dctx.fillRect(x1, 0, Math.max(1, x2 - x1), canvas.height);
+      dctx.strokeStyle = '#38BDF8'; dctx.lineWidth = 1 * scale; dctx.strokeRect(x1, 0, Math.max(1, x2 - x1), canvas.height);
+      // 경계 핸들
+      [x1, x2].forEach(x => {
+        dctx.fillStyle = '#38BDF8';
+        dctx.fillRect(x - 1.5 * scale, 0, 3 * scale, canvas.height);
+        dctx.fillRect(x - 5 * scale, 0, 10 * scale, 6 * scale);
+        dctx.fillRect(x - 5 * scale, canvas.height - 6 * scale, 10 * scale, 6 * scale);
+      });
+      // 라벨
+      dctx.fillStyle = '#F8FAFC';
+      dctx.font = (11 * scale) + 'px "JetBrains Mono", monospace';
+      dctx.textAlign = 'center';
+      const label = `${fmt(Math.min(pendingStart, pendingEnd))} ~ ${fmt(Math.max(pendingStart, pendingEnd))}  (${Math.abs(pendingEnd - pendingStart).toFixed(2)}s)`;
+      const labelX = clamp((x1 + x2) / 2, 60 * scale, canvas.width - 60 * scale);
+      dctx.fillText(label, labelX, 14 * scale);
+      dctx.textAlign = 'left';
+    } else {
+      const dir = pendingEnd < detailWindowStart ? 'left' : 'right';
+      dctx.fillStyle = '#38BDF8';
+      dctx.font = (12 * scale) + 'px "JetBrains Mono", monospace';
+      if (dir === 'left') dctx.fillText('◀ 구간', 4 * scale, canvas.height / 2);
+      else { dctx.textAlign = 'right'; dctx.fillText('구간 ▶', canvas.width - 4 * scale, canvas.height / 2); dctx.textAlign = 'left'; }
+    }
+  }
+  drawBookmarkTicks(canvas, detailWindowStart, detailWindowDur);
+  if (waveAudioEl && waveHasPlayed) {
+    const t = waveAudioEl.currentTime;
+    if (t >= detailWindowStart && t <= detailWindowStart + detailWindowDur) {
+      const px = ((t - detailWindowStart) / detailWindowDur) * canvas.width;
+      dctx.strokeStyle = '#F97316'; dctx.lineWidth = 2 * scale;
+      dctx.beginPath(); dctx.moveTo(px, 0); dctx.lineTo(px, canvas.height); dctx.stroke();
+      dctx.lineWidth = 1;
+    }
+  }
+  document.getElementById('wave-time').textContent =
+    `${fmt(detailWindowStart)} ~ ${fmt(detailWindowStart + detailWindowDur)} (${detailWindowDur.toFixed(1)}s)`;
+}
+
+// ── 구간 핸들 판정 (드래그 대상 결정) ──────────────────
+function hitTestDrag(px, canvasWidth) {
+  if (pendingStage === 'idle') return 'seek';
+  const x1 = ((Math.min(pendingStart, pendingEnd) - detailWindowStart) / detailWindowDur) * canvasWidth;
+  const x2 = ((Math.max(pendingStart, pendingEnd) - detailWindowStart) / detailWindowDur) * canvasWidth;
+  if (Math.abs(px - x1) <= HANDLE_PX) return 'start';
+  if (Math.abs(px - x2) <= HANDLE_PX) return 'end';
+  if (px > x1 && px < x2) return 'scrub'; // 구간 내부 — 전체를 옮기지 않고 재생 위치만 미리듣기
+  return 'new';
+}
+function cursorForDrag(target) {
+  if (target === 'start' || target === 'end') return 'ew-resize';
+  if (target === 'scrub') return 'pointer'; // "잡고 옮기기"가 아니라 "눌러서 미리듣기"임을 커서로도 드러냄
+  if (target === 'new') return 'crosshair';
+  return 'crosshair';
+}
+
+// ── 항상 켜져 있는 하이라이트/파형 추적 루프 ──────────
+let wasPlayingLastTick = false; // 정지→재생으로 바뀌는 순간을 잡아 자동 스크롤을 복귀시키는 데 씀
+function globalTick() {
+  if (waveChannelData) drawDetail();
+  const active = getActiveTime();
+  if (active) updateHighlight(active.t);
+  const playingNow = isWavePlaying() || isYoutubePlaying();
+  if (playingNow && !wasPlayingLastTick) autoScrollEnabled = true; // 재생을 다시 시작하면 자동 스크롤 복귀
+  wasPlayingLastTick = playingNow;
+  if (isWavePlaying() && pendingStage === 'idle') {
+    const t = waveAudioEl.currentTime;
+    if (t < detailWindowStart || t >= detailWindowStart + detailWindowDur) setDetailWindow(t);
+  }
+  requestAnimationFrame(globalTick);
+}
+requestAnimationFrame(globalTick);
+
+function initWaveEvents() {
+  const canvas = document.getElementById('detail-canvas');
+  const minimap = document.getElementById('minimap-canvas');
+  let dragStartSec = null, dragOrigStart = null, dragOrigEnd = null;
+  let dragPointerClientX = null;
+  let waveAutoScrollRAF = null, waveAutoScrollLastTs = null;
+
+  // mousemove와 자동 스크롤 tick이 공유하는 경계 갱신 로직 — 화면이 자동으로 밀릴 때도
+  // 포인터의 마지막 clientX를 기준으로 같은 계산을 반복해야 하므로 한 곳으로 뺐다.
+  function applyDragAtClientX(clientX) {
+    const rect = canvas.getBoundingClientRect();
+    const px = clamp((clientX - rect.left) * (canvas.width / rect.width), 0, canvas.width);
+    const sec = pxToSec(px, canvas.width);
+    if (pendingStage === 'idle') return; // 'seek'은 mouseup에서 처리
+    if (dragTarget === 'start') {
+      pendingStart = Math.min(sec, pendingEnd - 0.05);
+      lastBoundaryTouched = 'start';
+    } else if (dragTarget === 'end') {
+      pendingEnd = Math.max(sec, pendingStart + 0.05);
+      lastBoundaryTouched = 'end';
+    } else if (dragTarget === 'scrub') {
+      // 구간을 옮기지 않는다(과거엔 여기서 pendingStart/pendingEnd를 통째로 밀었는데, 손이 살짝
+      // 떨리기만 해도 구간 전체가 이동해버리는 사고가 있었음) — 재생 위치만 구간 안쪽으로 clamp해서 미리듣기.
+      const t = clamp(sec, Math.min(pendingStart, pendingEnd), Math.max(pendingStart, pendingEnd));
+      if (waveAudioEl) waveAudioEl.currentTime = t;
+      else if (playerObj) playerObj.seekTo(t, true);
+    } else if (dragTarget === 'new') {
+      pendingStart = Math.min(dragStartSec, sec);
+      pendingEnd = Math.max(dragStartSec, sec);
+    }
+    updatePendingBanner();
+    drawDetail();
+  }
+
+  // 화면 가장자리 근처에서 드래그 중이면 파형을 자동으로 스크롤한다 — 화면보다 긴 구간을
+  // 선택할 방법이 없었던 문제. 경계 조정('start'/'end')이나 새 구간 선택('new') 중에만
+  // 동작한다 — 'scrub'은 구간을 절대 안 옮기므로 스크롤할 이유가 없다.
+  function waveAutoScrollTick(ts) {
+    if (!waveDragging || dragPointerClientX == null || !['start', 'end', 'new'].includes(dragTarget)) {
+      waveAutoScrollRAF = null;
+      return;
+    }
+    const rect = canvas.getBoundingClientRect();
+    const edgeZone = clamp(rect.width * 0.07, 42, 90);
+    const x = dragPointerClientX - rect.left;
+    let direction = 0, strength = 0;
+    if (x > rect.width - edgeZone) { direction = 1; strength = clamp((x - (rect.width - edgeZone)) / edgeZone, 0, 1.8); }
+    else if (x < edgeZone) { direction = -1; strength = clamp((edgeZone - x) / edgeZone, 0, 1.8); }
+
+    if (waveAutoScrollLastTs == null) waveAutoScrollLastTs = ts;
+    const dt = clamp((ts - waveAutoScrollLastTs) / 1000, 0, 0.05);
+    waveAutoScrollLastTs = ts;
+
+    if (direction !== 0 && strength > 0) {
+      const maxStart = Math.max(0, waveDuration - detailWindowDur);
+      const speedSecPerSec = detailWindowDur * (0.35 + 0.95 * strength);
+      detailWindowStart = clamp(detailWindowStart + direction * speedSecPerSec * dt, 0, maxStart);
+      drawMinimap();
+      applyDragAtClientX(dragPointerClientX);
+    }
+    waveAutoScrollRAF = requestAnimationFrame(waveAutoScrollTick);
+  }
+  function startWaveAutoScroll() {
+    waveAutoScrollLastTs = null;
+    if (!waveAutoScrollRAF) waveAutoScrollRAF = requestAnimationFrame(waveAutoScrollTick);
+  }
+  function stopWaveAutoScroll() {
+    if (waveAutoScrollRAF) cancelAnimationFrame(waveAutoScrollRAF);
+    waveAutoScrollRAF = null; waveAutoScrollLastTs = null;
+  }
+
+  canvas.addEventListener('mousemove', (e) => {
+    if (waveDragging || !waveChannelData) return;
+    const rect = canvas.getBoundingClientRect();
+    const px = (e.clientX - rect.left) * (canvas.width / rect.width);
+    canvas.style.cursor = cursorForDrag(hitTestDrag(px, canvas.width));
+  });
+  canvas.addEventListener('mousedown', (e) => {
+    if (!waveChannelData) return;
+    waveDragging = true;
+    const rect = canvas.getBoundingClientRect();
+    const px = (e.clientX - rect.left) * (canvas.width / rect.width);
+    dragTarget = hitTestDrag(px, canvas.width);
+    dragStartSec = pxToSec(px, canvas.width);
+    dragOrigStart = pendingStart; dragOrigEnd = pendingEnd;
+    dragPointerClientX = e.clientX;
+    startWaveAutoScroll();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!waveDragging) return;
+    dragPointerClientX = e.clientX;
+    applyDragAtClientX(e.clientX);
+  });
+  window.addEventListener('mouseup', (e) => {
+    if (!waveDragging) return;
+    waveDragging = false;
+    stopWaveAutoScroll();
+    dragPointerClientX = null;
+    const rect = canvas.getBoundingClientRect();
+    const px = clamp((e.clientX - rect.left) * (canvas.width / rect.width), 0, canvas.width);
+    // movedPx는 캔버스 버퍼 픽셀 기준이라 DPI 배율(예: 125%)이 걸리면 화면상 1px도 안 되는 손떨림에도
+    // "드래그"로 오판정되어 클릭-탐색(seek)이 통째로 무시되는 문제가 있었음 — 화면 픽셀 기준으로 환산해서 판정.
+    const movedPx = Math.abs(px - ((dragStartSec - detailWindowStart) / detailWindowDur) * canvas.width) / canvasScale(canvas);
+    const CLICK_TOLERANCE_PX = 4;
+
+    if (dragTarget === 'seek') {
+      if (movedPx < CLICK_TOLERANCE_PX && waveAudioEl) {
+        if (waveAudioEl.readyState < 1) { setMsg('오디오 아직 처리 중입니다 — 잠시만 기다려주세요.', true); }
+        else { waveAudioEl.currentTime = pxToSec(px, canvas.width); waveHasPlayed = true; }
+      }
+      dragTarget = null; return;
+    }
+    if (dragTarget === 'new' && movedPx < CLICK_TOLERANCE_PX) { dragTarget = null; return; } // 아무 것도 없는 곳 단순 클릭은 무시
+    if (dragTarget === 'scrub') {
+      // 클릭이든 드래그든 구분하지 않는다 — 'scrub'은 애초에 경계를 절대 안 건드리므로
+      // "얼마나 움직였는가"로 이동/클릭을 가를 필요 자체가 없다. 항상 그 지점으로 재생 위치만 이동.
+      const t = pxToSec(px, canvas.width);
+      if (waveAudioEl) { waveAudioEl.currentTime = t; waveHasPlayed = true; }
+      else if (playerObj) { playerObj.seekTo(t, true); }
+      dragTarget = null; return;
+    }
+    if (pendingStage !== 'idle') {
+      if (pendingEnd <= pendingStart) pendingEnd = pendingStart + 0.1;
+      if (pendingMode === 'edit') commitEditFromPending();
+      // 루프 재시작 호출 없음 — startLoopForPending()이 이제 매 tick마다 pendingStart/pendingEnd를
+      // 새로 읽으므로, 여기서 다시 부르면 오히려 재생이 처음부터 끊기며 다시 시작돼버린다.
+      updatePendingBanner();
+    }
+    dragTarget = null;
+  });
+  minimap.addEventListener('click', (e) => {
+    if (!waveChannelData) return;
+    const rect = minimap.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (minimap.width / rect.width);
+    setDetailWindow((x / minimap.width) * waveDuration - detailWindowDur / 2);
+  });
+  canvas.addEventListener('wheel', (e) => {
+    if (!waveChannelData) return;
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const px = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const cursorSec = pxToSec(px, canvas.width);
+    if (e.shiftKey) {
+      const factor = e.deltaY < 0 ? (1 / 1.2) : 1.2;
+      const ratio = (cursorSec - detailWindowStart) / detailWindowDur;
+      const newDur = clamp(detailWindowDur * factor, 0.25, Math.max(0.25, waveDuration || detailWindowDur * factor));
+      detailWindowDur = newDur;
+      setDetailWindow(cursorSec - ratio * newDur);
+    } else {
+      const panAmount = detailWindowDur * 0.2 * (e.deltaY < 0 ? -1 : 1);
+      setDetailWindow(detailWindowStart + panAmount);
+    }
+  }, { passive: false });
+
+  const ro = new ResizeObserver(() => {
+    [canvas, minimap].forEach(c => {
+      const r = c.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+      if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    });
+    drawDetail(); drawMinimap();
+  });
+  ro.observe(canvas); ro.observe(minimap);
+}
+initWaveEvents();
+
+restoreState();
+restoreStoredAudio();
+updateHint();
+</script>
+
+</body>
+</html>
