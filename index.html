@@ -229,7 +229,7 @@
   <button class="ghost icon" onclick="toggleHelp()" title="단축키 도움말">?</button>
   <!-- 어느 빌드를 쓰고 있는지 신고받을 때 바로 확인하려고 남긴다 — 배포와 로컬 빌드가 섞여서
        옛날 버전을 진단하고 있었던 적이 있었다. 새 릴리즈마다 이 날짜만 올려주면 된다. -->
-  <span class="mono" style="font-size:10px;color:var(--muted);" title="빌드 날짜">v2026-09-04c</span>
+  <span class="mono" style="font-size:10px;color:var(--muted);" title="빌드 날짜">v2026-09-04d</span>
 
   <div class="dropdown" id="import-drawer">
     <h3>STT 결과 붙여넣기 (탭 구분 — 화자·start·end·duration·텍스트, 시트에서 복사)</h3>
@@ -361,7 +361,7 @@
 // 안 된다"는 신고의 상당수가 실은 버전 불일치다. 아래 checkForUpdate()가 이 값을 주기적으로
 // 재확인해서, 배포된 값이 지금 실행 중인 값과 다르면 새로고침을 안내한다. 새 릴리즈마다 갱신할 것
 // — 위 상단 빌드 날짜 라벨과 반드시 같은 값으로 맞춘다.
-const BUILD_VERSION = '2026-09-04c';
+const BUILD_VERSION = '2026-09-04d';
 // ── 전역 상태 ─────────────────────────────────────────
 let segments = [];               // { speaker, start, end, text, source: 'stt'|'manual' }
 let bookmarks = [];               // [[startSec, endSec], ...] — 1패스에서 M 두 번으로 지정한 구간
@@ -863,6 +863,10 @@ function removeBookmarkAt(i) {
   pushUndo();
   const removingReviewed = bookmarks[i] === reviewingBookmarkRef;
   bookmarks.splice(i, 1);
+  // i번 이전(또는 i번 자신)을 지우면 그 뒤 북마크가 전부 한 칸씩 당겨지는데 lastReviewedBookmarkIdx는
+  // 안 바뀌었다 — reviewNextBookmark()의 순환 계산이 어긋나서 방금 당겨진 자리를 건너뛰거나 같은
+  // 자리를 또 열었다. i번보다 뒤(i를 지나서)만 지웠으면 앞쪽 인덱스는 안 흔들리니 그대로 둔다.
+  if (i <= lastReviewedBookmarkIdx) lastReviewedBookmarkIdx--;
   updateBookmarkUI();
   saveState();
   if (removingReviewed) { resetPending(); setMsg('정리 중이던 북마크를 삭제해 정리를 취소했습니다.'); return; }
@@ -1070,11 +1074,13 @@ function finalizePending(text) {
   recomputeSpeakerList(); // recomputeSpeakerList()의 단일 세그먼트용 인라인 복사본이었는데 filter(Boolean)이 빠져 있었다
   const doneIndex = bookmarks.indexOf(reviewingBookmarkRef);
   if (doneIndex !== -1) bookmarks.splice(doneIndex, 1);
-  renderSegments(seg);
   updateBookmarkUI();
   saveState();
   setMsg(`행 추가됨: 화자${pendingSpeaker} ${fmt(seg.start)}~${fmt(seg.end)} "${text}"`);
-  resetPending();
+  resetPending(seg); // 새 행 하이라이트(.new-row 플래시)를 여기서 같이 넘긴다 — 예전엔 바로 위에서
+  // renderSegments(seg)를 먼저 부르고 resetPending()이 인자 없이 renderSegments()를 한 번 더 불러서,
+  // 같은 틱 안에 하이라이트가 그려지자마자 지워져 브라우저가 그 프레임을 그릴 기회조차 없었다 —
+  // 플래시 애니메이션이 코드상으로는 동작하지만 화면에는 한 번도 안 보이던 버그.
   if (bookmarks.length > 0) reviewBookmarkAt(Math.min(Math.max(doneIndex, 0), bookmarks.length - 1));
 }
 function discardBookmark() {
@@ -1088,14 +1094,14 @@ function discardBookmark() {
   resetPending();
   if (bookmarks.length > 0) reviewBookmarkAt(Math.min(Math.max(doneIndex, 0), bookmarks.length - 1));
 }
-function resetPending() {
+function resetPending(highlightSeg) {
   stopLoop();
   pendingMode = null; pendingStage = 'idle';
   pendingStart = null; pendingEnd = null; pendingSpeaker = null;
   editingIndex = null; selectedRowIndex = null; reviewingBookmarkRef = null;
   editSessionSnapshotTaken = false;
   updatePendingBanner();
-  renderSegments();
+  renderSegments(highlightSeg); // 대부분의 호출부(Escape·취소 등)는 인자 없이 불러 하이라이트 없음 — 기존과 동일
   drawDetail(); drawMinimap();
 }
 function updatePendingBanner() {
@@ -1284,8 +1290,14 @@ document.addEventListener('keydown', (e) => {
     const dir = e.key === 'ArrowLeft' ? -1 : 1;
     const step = e.ctrlKey ? 5 : (e.shiftKey ? 1 : 0.1);
     if (pendingStage !== 'idle') { nudgeBoundary(dir * step); }
-    else if (isYoutubePlaying()) { playerObj.seekTo(Math.max(0, playerObj.getCurrentTime() + dir * step), true); }
-    else if (waveAudioEl) { waveAudioEl.currentTime = Math.max(0, waveAudioEl.currentTime + dir * step); drawDetail(); }
+    else {
+      // isYoutubePlaying() 우선 → waveAudioEl 존재 여부로 폴백하던 예전 방식은, 유튜브를 "일시정지"해둔
+      // 채로(재생 중이 아니니 isYoutubePlaying()===false) 화살표로 미세 조정하려 하면 로컬 음원이 로드돼
+      // 있다는 이유만으로 엉뚱한(안 보고 있는) 쪽이 움직였다 — pickSource()로 통일.
+      const navSrc = pickSource();
+      if (navSrc === 'youtube' && ytUsable()) { playerObj.seekTo(Math.max(0, playerObj.getCurrentTime() + dir * step), true); }
+      else if (navSrc === 'wave' && waveAudioEl) { waveAudioEl.currentTime = Math.max(0, waveAudioEl.currentTime + dir * step); drawDetail(); }
+    }
   }
 });
 document.addEventListener('mousedown', (e) => {
@@ -1310,7 +1322,9 @@ function importTsv() {
     else if (cols.length === 3) { speaker = ''; start = cols[0]; end = cols[1]; text = cols[2]; }
     else continue;
     const s = parseTimeStr(start), e = parseTimeStr(end);
-    if (isNaN(s) || isNaN(e)) continue;
+    // loadCsvFile()은 e < s(끝이 시작보다 빠름)도 걸러내는데 이 경로는 파싱 성공 여부만 봤다 —
+    // 시트에서 start/end 컬럼이 뒤바뀐 채로 복사되면 음수 길이 행이 그대로 만들어졌다.
+    if (isNaN(s) || isNaN(e) || e < s) continue;
     parsed.push({ speaker: unguardFormulaLead(speaker), start: s, end: e, text: unguardFormulaLead(text), source: 'stt' });
   }
   if (parsed.length === 0) { setMsg('파싱된 행이 없습니다 — 탭으로 구분된 형식인지 확인하세요.', true); return; }
@@ -1462,7 +1476,15 @@ function downloadJsonSnapshot() {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const name = `stt-workbench-${timestampForFilename()}.json`;
   triggerDownload(blob, name);
-  setMsg(`${name}로 저장했습니다 (${segments.length}개 행, ${bookmarks.length}개 북마크).`);
+  // #pending-text-input은 Enter로 확정해야만 segments에 들어간다 — Ctrl+S는 어디서 눌러도(포커스
+  // 무관) 항상 즉시 저장되므로, 정리 중 텍스트를 아직 Enter 안 친 상태에서 Ctrl+S를 누르면 그
+  // 한 줄만 빠진 채로 "저장했습니다"가 떠서 다 저장된 줄 알기 쉬웠다 — 다만 그 북마크 자체는
+  // bookmarks 배열에 그대로 남아있으니(finalizePending에서만 제거) N으로 다시 열어 이어 칠 수는
+  // 있다. 완전한 자동 복구 대신, 최소한 빠졌다는 사실만은 저장 메시지에 바로 알린다.
+  const pendingInput = document.getElementById('pending-text-input');
+  const hasUncommittedText = pendingInput && pendingInput.style.visibility !== 'hidden' && pendingInput.value.trim();
+  setMsg(`${name}로 저장했습니다 (${segments.length}개 행, ${bookmarks.length}개 북마크).` +
+    (hasUncommittedText ? ' ⚠ 지금 입력 중이던 텍스트는 Enter로 확정 전이라 포함 안 됨 — 확정 후 다시 저장하세요.' : ''));
 }
 async function loadJsonSnapshot(file) {
   try {
@@ -1471,6 +1493,10 @@ async function loadJsonSnapshot(file) {
     pushUndo();
     segments = parsedData.segments;
     bookmarks = Array.isArray(parsedData.bookmarks) ? parsedData.bookmarks : [];
+    // importTsv()/loadCsvFile()와 같은 이유로 리셋한다 — recomputeSpeakerList()는 누적 방식이라
+    // 리셋 없이 부르면, 다른 세션에서 저장한 JSON을 불러와도 이전 세션의 화자가 speakerList에
+    // 남아 1~5 키 매핑이 밀린다. 이 함수만 그 정리를 빠뜨리고 있었다.
+    speakerList = [];
     resetPending();
     recomputeSpeakerList();
     renderSegments();
@@ -1535,6 +1561,10 @@ function downloadCsv(excelMode) {
 function renderSegments(highlightSeg) {
   const body = document.getElementById('segment-body');
   body.innerHTML = '';
+  // 아래에서 행을 전부 새로 만들므로, updateHighlight()의 "이전 프레임에 켜져 있던 행" 추적이
+  // 옛(이미 사라진) DOM 노드를 가리키게 된다 — 안 비우면 새로 생긴 행에 now-playing이 다시
+  // 켜져야 할 때도 "이미 켜져 있다"고 착각해 건너뛴다.
+  highlightedRowIndices = new Set();
   segments.forEach((s, i) => {
     const tr = document.createElement('tr');
     tr.className = 'segrow mono ' + (s.source === 'manual' ? 'manual-row' : 'stt-row') +
@@ -1700,15 +1730,24 @@ document.getElementById('table-wrap').addEventListener('wheel', () => {
 // (행 클릭 → 'boundary') 내내 추종이 꺼져 있던 문제를 고치기 위해 도입했다. 표 자동 스크롤과
 // 얽히면 안 되므로 별도 플래그로 둔다.
 let waveFollowEnabled = true;
+// updateHighlight()가 매 프레임(60fps) 전체 행의 classList를 건드리면, 겹침 많은 실사용 파일
+// 특유의 큰 세그먼트 수(실측 3000행 기준 384ms/프레임 — 사실상 초당 2~3프레임까지 주저앉음)에서
+// 재생 중 화면이 통째로 버벅였다. computeBuckets와 같은 종류의 문제: 이전 프레임과 달라진 행만
+// classList를 건드리면 같은 조건에서 0.3ms/프레임으로 떨어진다(재생 헤드는 한 프레임에 겹치는
+// 구간 몇 개만 드나들 뿐, 나머지 수천 행은 그대로이므로). renderSegments()가 매번 DOM을 통째로
+// 새로 만들기 때문에, 그때마다 이 추적 집합도 반드시 같이 비워야 한다(아래 renderSegments 참고).
+let highlightedRowIndices = new Set();
 function updateHighlight(t) {
   const body = document.getElementById('segment-body');
   const rows = body.children;
   const matchedIdx = [];
+  const newHighlighted = new Set();
   for (let i = 0; i < segments.length; i++) {
-    const hit = t >= segments[i].start && t < segments[i].end;
-    if (rows[i]) rows[i].classList.toggle('now-playing', hit);
-    if (hit) matchedIdx.push(i);
+    if (t >= segments[i].start && t < segments[i].end) { matchedIdx.push(i); newHighlighted.add(i); }
   }
+  for (const i of highlightedRowIndices) { if (!newHighlighted.has(i) && rows[i]) rows[i].classList.remove('now-playing'); }
+  for (const i of newHighlighted) { if (!highlightedRowIndices.has(i) && rows[i]) rows[i].classList.add('now-playing'); }
+  highlightedRowIndices = newHighlighted;
   const key = matchedIdx.join(',');
   if (key !== lastHighlightKey) {
     lastHighlightKey = key;
@@ -2108,6 +2147,11 @@ window.__stt = () => ({
   lastSource, pendingSpeaker, speakerList: speakerList.slice(), loopEnabled,
   waveDragging, dragTarget,
   loopTimers: { wave: !!waveRepeatInterval, yt: !!youtubeRepeatInterval },
+  // pickSource()/getActiveTime()가 실제로 무엇을 "지금 쓰는 쪽"으로 판단하는지 직접 노출한다 —
+  // 유튜브를 먼저 불러오고 음원을 나중에 불러왔을 때 커서/클릭이 엉뚱한 쪽으로 가던 버그(2026-09-04)
+  // 처럼, waveAudioEl/playerObj 원시값만 봐서는 "둘 다 로드는 됐는데 어느 쪽이 활성인지"를 바로
+  // 알 수 없었다. 다음에 비슷한 신고가 오면 이 값부터 확인할 것.
+  activeSource: pickSource(), activeTime: getActiveTime(),
 });
 
 // 탭이 실제로 백그라운드로 밀리면(다른 창으로 전환, 최소화 등) 브라우저가 requestAnimationFrame을
