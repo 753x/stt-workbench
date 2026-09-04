@@ -229,7 +229,7 @@
   <button class="ghost icon" onclick="toggleHelp()" title="단축키 도움말">?</button>
   <!-- 어느 빌드를 쓰고 있는지 신고받을 때 바로 확인하려고 남긴다 — 배포와 로컬 빌드가 섞여서
        옛날 버전을 진단하고 있었던 적이 있었다. 새 릴리즈마다 이 날짜만 올려주면 된다. -->
-  <span class="mono" style="font-size:10px;color:var(--muted);" title="빌드 날짜">v2026-09-04b</span>
+  <span class="mono" style="font-size:10px;color:var(--muted);" title="빌드 날짜">v2026-09-04c</span>
 
   <div class="dropdown" id="import-drawer">
     <h3>STT 결과 붙여넣기 (탭 구분 — 화자·start·end·duration·텍스트, 시트에서 복사)</h3>
@@ -361,7 +361,7 @@
 // 안 된다"는 신고의 상당수가 실은 버전 불일치다. 아래 checkForUpdate()가 이 값을 주기적으로
 // 재확인해서, 배포된 값이 지금 실행 중인 값과 다르면 새로고침을 안내한다. 새 릴리즈마다 갱신할 것
 // — 위 상단 빌드 날짜 라벨과 반드시 같은 값으로 맞춘다.
-const BUILD_VERSION = '2026-09-04b';
+const BUILD_VERSION = '2026-09-04c';
 // ── 전역 상태 ─────────────────────────────────────────
 let segments = [];               // { speaker, start, end, text, source: 'stt'|'manual' }
 let bookmarks = [];               // [[startSec, endSec], ...] — 1패스에서 M 두 번으로 지정한 구간
@@ -2005,8 +2005,15 @@ function drawDetail() {
   // 예전엔 waveHasPlayed(파일을 열 때마다 리셋되고, 준비 전 클릭에선 세팅도 안 되던 플래그)로
   // 커서를 가려서 "클릭해도 재생해도 바가 안 생긴다"는 신고로 이어졌다 — currentTime은 항상
   // 유효(최소 0)하므로 오디오가 있으면 그냥 항상 그린다.
-  if (waveAudioEl) {
-    const t = waveAudioEl.currentTime;
+  // waveAudioEl 존재 여부가 아니라 getActiveTime()(=pickSource())으로 "지금 실제로 재생 중인 쪽"을
+  // 물어야 한다 — 예전엔 여기서도 waveAudioEl이 있으면 무조건 그 currentTime을 그렸다. 유튜브를
+  // 먼저 불러와 보다가(화자 확인) 나중에 로컬 음원까지 불러오면(waveAudioEl이 non-null이 되는 순간)
+  // 실제로는 유튜브가 재생 중이어도 커서가 로컬 음원의(재생한 적 없어 0인) 위치에 멈춰버렸다 —
+  // pickSource()가 이미 Space/구간반복에서 겪은 같은 문제를 고치려고 만들어진 함수인데 여기 4곳은
+  // 그 리팩터를 놓치고 있었다.
+  const active = getActiveTime();
+  if (active) {
+    const t = active.t;
     if (t >= detailWindowStart && t <= detailWindowStart + detailWindowDur) {
       const px = ((t - detailWindowStart) / detailWindowDur) * canvas.width;
       dctx.strokeStyle = '#F97316'; dctx.lineWidth = 2 * scale;
@@ -2138,8 +2145,11 @@ function initWaveEvents() {
       // 구간을 옮기지 않는다(과거엔 여기서 pendingStart/pendingEnd를 통째로 밀었는데, 손이 살짝
       // 떨리기만 해도 구간 전체가 이동해버리는 사고가 있었음) — 재생 위치만 구간 안쪽으로 clamp해서 미리듣기.
       const t = clamp(sec, Math.min(pendingStart, pendingEnd), Math.max(pendingStart, pendingEnd));
-      if (waveAudioEl) waveAudioEl.currentTime = t;
-      else if (ytUsable()) playerObj.seekTo(t, true);
+      // waveAudioEl 존재 여부가 아니라 pickSource()로 "지금 실제로 쓰는 쪽"을 물어야 한다 — 안 그러면
+      // 유튜브로 보는 중에도 로컬 음원만 불러와져 있으면 그쪽만 조용히 움직이고 실제 듣는 소리는 안 바뀐다.
+      const scrubSrc = pickSource();
+      if (scrubSrc === 'wave' && waveAudioEl) waveAudioEl.currentTime = t;
+      else if (scrubSrc === 'youtube' && ytUsable()) playerObj.seekTo(t, true);
     } else if (dragTarget === 'new') {
       pendingStart = Math.min(dragStartSec, sec);
       pendingEnd = Math.max(dragStartSec, sec);
@@ -2233,7 +2243,15 @@ function initWaveEvents() {
     const CLICK_TOLERANCE_PX = 4;
 
     if (dragTarget === 'seek') {
-      if (movedPx < CLICK_TOLERANCE_PX && waveAudioEl) seekWave(pxToSec(px, canvas.width));
+      // waveAudioEl 존재 여부가 아니라 pickSource()로 "지금 실제로 쓰는 쪽"을 물어야 한다 — 유튜브를
+      // 먼저 불러와 보다가 로컬 음원까지 불러온 뒤에는(waveAudioEl이 생긴 뒤에는) 유튜브를 계속 보고
+      // 있어도 클릭이 조용히 로컬 음원(안 들리는 쪽)만 옮기고 실제 화면/소리는 그대로였다.
+      if (movedPx < CLICK_TOLERANCE_PX) {
+        const t = pxToSec(px, canvas.width);
+        const seekSrc = pickSource();
+        if (seekSrc === 'wave' && waveAudioEl) seekWave(t);
+        else if (seekSrc === 'youtube' && ytUsable()) playerObj.seekTo(t, true);
+      }
       dragTarget = null; return;
     }
     if (dragTarget === 'new' && movedPx < CLICK_TOLERANCE_PX) { dragTarget = null; return; } // 아무 것도 없는 곳 단순 클릭은 무시
@@ -2241,8 +2259,9 @@ function initWaveEvents() {
       // 클릭이든 드래그든 구분하지 않는다 — 'scrub'은 애초에 경계를 절대 안 건드리므로
       // "얼마나 움직였는가"로 이동/클릭을 가를 필요 자체가 없다. 항상 그 지점으로 재생 위치만 이동.
       const t = pxToSec(px, canvas.width);
-      if (waveAudioEl) { waveAudioEl.currentTime = t; }
-      else if (ytUsable()) { playerObj.seekTo(t, true); }
+      const scrubSrc = pickSource();
+      if (scrubSrc === 'wave' && waveAudioEl) { waveAudioEl.currentTime = t; }
+      else if (scrubSrc === 'youtube' && ytUsable()) { playerObj.seekTo(t, true); }
       dragTarget = null; return;
     }
     if (pendingStage !== 'idle') {
