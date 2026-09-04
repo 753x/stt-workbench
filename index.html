@@ -229,7 +229,7 @@
   <button class="ghost icon" onclick="toggleHelp()" title="단축키 도움말">?</button>
   <!-- 어느 빌드를 쓰고 있는지 신고받을 때 바로 확인하려고 남긴다 — 배포와 로컬 빌드가 섞여서
        옛날 버전을 진단하고 있었던 적이 있었다. 새 릴리즈마다 이 날짜만 올려주면 된다. -->
-  <span class="mono" style="font-size:10px;color:var(--muted);" title="빌드 날짜">v2026-09-04</span>
+  <span class="mono" style="font-size:10px;color:var(--muted);" title="빌드 날짜">v2026-09-04b</span>
 
   <div class="dropdown" id="import-drawer">
     <h3>STT 결과 붙여넣기 (탭 구분 — 화자·start·end·duration·텍스트, 시트에서 복사)</h3>
@@ -254,6 +254,12 @@
       <button class="ghost" onclick="downloadCsv(true)" title="시간 칸을 텍스트로 고정해 Excel이 00:00:04.948을 0:00:04로 뭉개지 않게 함">CSV 다운로드 (Excel용)</button>
     </div>
   </div>
+</div>
+
+<div id="update-banner" style="display:none;background:#F97316;color:#1e1108;padding:8px 14px;font-size:13px;align-items:center;gap:10px;">
+  <span>새 버전이 배포됐어요 — 지금 작업 중인 내용은 자동저장돼 있으니, 편한 시점에 새로고침 해주세요.</span>
+  <button onclick="location.reload()" style="background:#1e1108;color:#F97316;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;">새로고침</button>
+  <button class="ghost" onclick="dismissUpdateBanner()" style="border-color:#1e1108;color:#1e1108;">나중에</button>
 </div>
 
 <div id="stage">
@@ -348,6 +354,14 @@
 </div>
 
 <script>
+// 배포본을 여러 작업자가 각자 브라우저 탭에 띄워놓고 오래 쓰는 도구라, 새로 배포해도 이미 열려있는
+// 탭은 새로고침 전까지 절대 갱신되지 않는다(SPA라 폴링/새로고침 로직이 없으면 영원히 옛 버전으로
+// 남는다). 여기에 GitHub Pages CDN(max-age=600)과 브라우저 자체 캐시까지 겹치면, 배포 직후에도
+// 사람마다 새로고침 시점에 따라 최대 몇 분~며칠씩 다른 버전을 쓰게 된다 — "나는 되는데 저 사람은
+// 안 된다"는 신고의 상당수가 실은 버전 불일치다. 아래 checkForUpdate()가 이 값을 주기적으로
+// 재확인해서, 배포된 값이 지금 실행 중인 값과 다르면 새로고침을 안내한다. 새 릴리즈마다 갱신할 것
+// — 위 상단 빌드 날짜 라벨과 반드시 같은 값으로 맞춘다.
+const BUILD_VERSION = '2026-09-04b';
 // ── 전역 상태 ─────────────────────────────────────────
 let segments = [];               // { speaker, start, end, text, source: 'stt'|'manual' }
 let bookmarks = [];               // [[startSec, endSec], ...] — 1패스에서 M 두 번으로 지정한 구간
@@ -1842,11 +1856,18 @@ function computeBuckets(startSec, endSec, numBuckets) {
   const endIdx = Math.min(waveChannelData.length, Math.ceil(endSec * waveSampleRate));
   const span = Math.max(1, endIdx - startIdx);
   const bucketSize = Math.max(1, Math.floor(span / numBuckets));
+  // 버킷 하나가 담는 샘플 수(bucketSize)는 확대 창 폭에 비례한다 — 1시간 넘는 파일을 전체보기로
+  // 열거나 넓게 줌아웃한 채로 드래그/자동스크롤하면 버킷당 수만~수십만 샘플이 되고, 이게 매 프레임
+  // (창이 계속 바뀌어 위 캐시가 못 먹는 동안) 전부 스캔돼 프레임당 1초 가까이 멈췄다(61분 파일
+  // 전체보기 실측 1018ms/프레임). 화면 해상도(1260px)보다 촘촘한 정밀도는 어차피 안 보이므로
+  // 버킷당 스캔 샘플 수를 상한선까지만 보고 나머지는 건너뛴다.
+  const MAX_SAMPLES_PER_BUCKET = 512;
+  const stride = Math.max(1, Math.floor(bucketSize / MAX_SAMPLES_PER_BUCKET));
   const buckets = new Float32Array(numBuckets);
   for (let b = 0; b < numBuckets; b++) {
     const s = startIdx + b * bucketSize, e = Math.min(endIdx, s + bucketSize);
     let max = 0;
-    for (let i = s; i < e; i++) { const v = Math.abs(waveChannelData[i]); if (v > max) max = v; }
+    for (let i = s; i < e; i += stride) { const v = Math.abs(waveChannelData[i]); if (v > max) max = v; }
     buckets[b] = max;
   }
   return buckets;
@@ -2285,6 +2306,30 @@ restoreState();
 // 페이지가 뜨자마자 한 번 idle 상태로 확정해서 숨긴다.
 updatePendingBanner();
 updateHint();
+
+// ── 배포 버전 확인 ────────────────────────────────────
+// 탭을 오래 켜놓고 쓰는 도구라 새로고침을 하기 전까진 아무리 배포해도 절대 안 바뀐다. 주기적으로
+// (그리고 탭이 다시 보일 때) 배포된 페이지를 캐시 없이 다시 받아 BUILD_VERSION을 비교하고, 다르면
+// 배너로 알린다 — 절대 자동 새로고침은 하지 않는다(재생/편집 중일 수 있어서 사용자 선택에 맡긴다).
+let updateBannerDismissed = false;
+async function checkForUpdate() {
+  if (updateBannerDismissed) return;
+  try {
+    const res = await fetch(location.href, { cache: 'no-store' });
+    const html = await res.text();
+    const m = html.match(/const BUILD_VERSION = '([^']+)'/);
+    if (m && m[1] !== BUILD_VERSION) showUpdateBanner();
+  } catch (e) { /* 오프라인·네트워크 문제는 조용히 무시 — 다음 주기에 다시 시도 */ }
+}
+function showUpdateBanner() {
+  document.getElementById('update-banner').style.display = 'flex';
+}
+function dismissUpdateBanner() {
+  updateBannerDismissed = true;
+  document.getElementById('update-banner').style.display = 'none';
+}
+setInterval(checkForUpdate, 5 * 60 * 1000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(); });
 </script>
 
 </body>
