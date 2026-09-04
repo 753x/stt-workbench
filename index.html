@@ -29,7 +29,7 @@
     overflow: hidden;
   }
   .mono { font-family: "JetBrains Mono", "Consolas", monospace; }
-  button {
+  button, label.ghost {
     background: var(--accent);
     color: #001510;
     border: none;
@@ -42,9 +42,9 @@
     transition: filter 150ms, opacity 150ms;
     font-family: inherit;
   }
-  button:hover { filter: brightness(1.1); }
-  button.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
-  button.ghost:hover { border-color: var(--accent2); }
+  button:hover, label.ghost:hover { filter: brightness(1.1); }
+  button.ghost, label.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+  button.ghost:hover, label.ghost:hover { border-color: var(--accent2); }
   button.danger { background: transparent; color: var(--danger); border: 1px solid #7F1D1D; }
   button.icon { padding: 6px 8px; }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -118,7 +118,6 @@
   #zoom-row .zoom-btn { padding: 3px 8px; font-size: 11px; }
   /* margin-left: auto가 예전엔 있었는데, 요소가 #toolbar로 옮겨오면서 인라인 style="margin:0"에
      항상 덮여써져 죽은 규칙이었다 — 실제로 적용되는 나머지 속성만 남긴다. */
-  #preroll-label { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
   #loop-label { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
 
   /* ── 작업 영역 (배너 + 테이블) ──────────────────── */
@@ -213,16 +212,15 @@
 <div id="toolbar">
   <h1>STT 워크벤치</h1>
   <input type="text" id="url-input" placeholder="유튜브 링크">
-  <button class="ghost" onclick="loadFromInput()">불러오기</button>
-  <input type="file" id="audio-file-input" accept="audio/*,.m4a" onchange="loadAudioFile(event)">
-  <button class="ghost" id="restore-audio-btn" style="display:none;"></button>
-  <button class="ghost" id="import-toggle" onclick="toggleDrawer('import-drawer')">가져오기/내보내기 ▾</button>
+  <button class="ghost" onclick="loadFromInput()">영상 불러오기</button>
+  <input type="file" id="audio-file-input" accept="audio/*,.m4a" onchange="loadAudioFile(event)" style="display:none;">
+  <label class="ghost" for="audio-file-input" style="cursor:pointer;">음원 파일 선택</label>
+  <button class="ghost" id="import-toggle" onclick="toggleDrawer('import-drawer')">스크립트 가져오기/불러오기 ▾</button>
   <select id="rate-select" title="재생 속도" onchange="setPlaybackRate(this.value)">
     <option value="1">1.0x</option>
     <option value="0.75">0.75x</option>
     <option value="0.5">0.5x</option>
   </select>
-  <label id="preroll-label" style="margin:0;"><input type="checkbox" id="preroll-toggle" checked onchange="preRollEnabled=this.checked;"> 프리롤</label>
   <label id="loop-label" style="margin:0;" title="끄면 구간을 한 번만 재생하고 끝에서 멈춥니다"><input type="checkbox" id="loop-toggle" onchange="loopEnabled=this.checked;"> 구간 반복</label>
   <div class="spacer"></div>
   <span id="save-badge">—</span>
@@ -363,9 +361,8 @@ let waveAudioEl = null, waveRepeatInterval = null, youtubeRepeatInterval = null;
 let detailWindowStart = 0, detailWindowDur = 8;
 let waveDragging = false, dragTarget = null;
 let loopActive = false;
-let playbackRate = 1, preRollEnabled = true, loopEnabled = false;
+let playbackRate = 1, loopEnabled = false;
 let lastSource = 'wave'; // 'wave' | 'youtube' — v로 전환하거나 재생이 시작될 때마다 갱신, 재생 재개 시 어느 쪽을 쓸지 판단하는 기준
-const PREROLL_SEC = 0.3;
 const HANDLE_PX = 8;
 
 // 대기(pending) 상태: 북마크 정리(new) 또는 기존 행 재지정(edit)
@@ -761,11 +758,6 @@ function restartPendingFromStart() {
 function startLoopForPending(forceSrc) {
   stopAllLoops();
   loopActive = true;
-  // startAt을 클로저에 고정하지 않는다 — 매 반복 시작 시점에 pendingStart를 다시 읽어야
-  // 재생 중 드래그로 경계를 바꿨을 때 다음 반복부터 바로 반영된다. pendingEnd는 이미
-  // interval 콜백 안에서 매번 새로 읽고 있었다(경계 조건 자체가 참조라). 예전엔 startAt이
-  // 고정이라, 경계를 놓을 때마다(mouseup) 루프를 통째로 재시작해야 했고 그때마다 소리가 끊겼다.
-  const getStartAt = () => preRollEnabled ? Math.max(0, pendingStart - PREROLL_SEC) : pendingStart;
   const src = forceSrc || pickSource();
   // pickSource()는 waveAudioEl이 있으면 항상 'wave'를 반환하므로(src !== 'youtube' && waveAudioEl)는
   // src === 'wave'와 완전히 같은 조건이었다 — 항상 참이거나 항상 거짓인 죽은 둘째 항을 정리.
@@ -781,23 +773,23 @@ function startLoopForPending(forceSrc) {
       loopActive = false;
       return false;
     }
-    waveAudioEl.currentTime = getStartAt();
+    waveAudioEl.currentTime = pendingStart;
     waveAudioEl.playbackRate = playbackRate;
     waveAudioEl.play();
     waveRepeatInterval = setInterval(() => {
       if (waveAudioEl.currentTime >= pendingEnd) {
-        if (loopEnabled) waveAudioEl.currentTime = getStartAt();
+        if (loopEnabled) waveAudioEl.currentTime = pendingStart;
         else { waveAudioEl.pause(); stopAllLoops(); loopActive = false; }
       }
     }, 50);
     return true;
   } else if (ytUsable()) {
-    playerObj.seekTo(Math.max(0, getStartAt() - 0.2), true);
+    playerObj.seekTo(Math.max(0, pendingStart - 0.2), true);
     playerObj.playVideo();
     try { playerObj.setPlaybackRate(playbackRate); } catch (e) {}
     youtubeRepeatInterval = setInterval(() => {
       if (playerObj.getCurrentTime() >= pendingEnd) {
-        if (loopEnabled) playerObj.seekTo(Math.max(0, getStartAt() - 0.2), true);
+        if (loopEnabled) playerObj.seekTo(Math.max(0, pendingStart - 0.2), true);
         else { playerObj.pauseVideo(); stopAllLoops(); loopActive = false; }
       }
     }, 150);
@@ -1768,7 +1760,6 @@ async function loadAudioFile(e) {
   const file = e.target.files[0];
   if (!file) return;
   await loadAudioFileObj(file);
-  saveAudioForRestore(file); // 실패해도 무시 — 다음 새로고침 때 복원 버튼이 안 뜰 뿐 지금 작업엔 지장 없음
   e.target.blur(); // 포커스가 이 input에 남으면 첫 스페이스바가 재생 대신 파일 선택창을 다시 연다
 }
 let waveObjectUrl = null;      // 이전 blob URL을 해제하기 위해 기억해둔다(46MB급 누수 방지)
@@ -1832,83 +1823,6 @@ async function loadAudioFileObj(file) {
   }
 }
 
-// ── 오디오 IndexedDB 저장 → 새로고침 복원 (46MB급 파일을 매번 다시 고르는 마찰 제거) ──
-// localStorage 자동저장과 수명을 맞추려고 세션ID가 아니라 고정 키 하나만 쓴다 — hwon 원본은
-// sessionStorage 세션ID를 키로 써서 탭을 닫으면 오디오를 다시 못 찾는 문제가 있었다.
-// 자동으로 다시 디코딩하지 않고 확인 버튼만 띄운다 — 46MB 디코딩은 수 초가 걸리고
-// 다른 파일로 작업을 시작할 수도 있어서 강제로 기다리게 하면 안 된다.
-const AUDIO_DB_NAME = 'stt-workbench-audio-v1';
-const AUDIO_STORE_NAME = 'audio';
-const AUDIO_FIXED_KEY = 'current';
-function openAudioDB() {
-  return new Promise((resolve, reject) => {
-    if (!('indexedDB' in window)) { reject(new Error('IndexedDB 미지원')); return; }
-    const req = indexedDB.open(AUDIO_DB_NAME, 1);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(AUDIO_STORE_NAME)) db.createObjectStore(AUDIO_STORE_NAME, { keyPath: 'key' });
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error || new Error('IndexedDB 열기 실패'));
-  });
-}
-async function saveAudioForRestore(file) {
-  let db = null;
-  try {
-    db = await openAudioDB();
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(AUDIO_STORE_NAME, 'readwrite');
-      tx.objectStore(AUDIO_STORE_NAME).put({
-        key: AUDIO_FIXED_KEY, blob: file,
-        meta: { name: file.name, type: file.type, size: file.size }, savedAt: Date.now()
-      });
-      tx.oncomplete = resolve;
-      tx.onerror = () => reject(tx.error || new Error('오디오 저장 실패'));
-    });
-  } catch (err) {
-    // 저장 실패(용량 초과 등)해도 지금 작업은 정상 진행된다 — 콘솔에만 남기고 조용히 넘어간다.
-    console.warn('오디오 자동 저장 실패:', err);
-  } finally {
-    // db.close()가 await 뒤(성공 경로)에만 있으면, 쓰기가 실패해 reject됐을 때 커넥션이 열린
-    // 채로 남아 다음 onupgradeneeded를 막을 수 있다 — 성공이든 실패든 항상 닫는다.
-    if (db) db.close();
-  }
-}
-async function getStoredAudio() {
-  let db = null;
-  try {
-    db = await openAudioDB();
-    const result = await new Promise((resolve, reject) => {
-      const tx = db.transaction(AUDIO_STORE_NAME, 'readonly');
-      const req = tx.objectStore(AUDIO_STORE_NAME).get(AUDIO_FIXED_KEY);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error || new Error('오디오 읽기 실패'));
-    });
-    return result;
-  } catch (err) {
-    return null;
-  } finally {
-    if (db) db.close();
-  }
-}
-async function restoreStoredAudio() {
-  const stored = await getStoredAudio();
-  const btn = document.getElementById('restore-audio-btn');
-  if (!stored || !stored.blob || !btn) return;
-  const meta = stored.meta || {};
-  const sizeMb = ((meta.size || 0) / 1024 / 1024).toFixed(1);
-  btn.textContent = `이전 오디오 복원 (${meta.name || '오디오'}, ${sizeMb}MB)`;
-  btn.style.display = '';
-  btn.onclick = async () => {
-    // 예전엔 디코딩 시작 전에 버튼부터 숨겨서, decodeAudioData가 실패하면(손상된 파일 등)
-    // 다시 시도할 UI 자체가 사라졌다 — 성공한 뒤에만 숨긴다.
-    btn.disabled = true;
-    const file = new File([stored.blob], meta.name || 'restored-audio', { type: meta.type || stored.blob.type || 'audio/*' });
-    const ok = await loadAudioFileObj(file);
-    if (ok) btn.style.display = 'none';
-    btn.disabled = false;
-  };
-}
 // globalTick()이 초당 60번 drawDetail()을 불러 재생 커서를 그리는데, 매번 computeBuckets가
 // 창 안의 샘플을 전부 훑으면(57MB wav 전체줌이면 수백만 개) 프레임마다 낭비가 크다 —
 // 창(start/end/width)이 실제로 안 바뀐 프레임에는 이전에 계산해둔 버킷을 그대로 재사용한다.
@@ -2163,7 +2077,7 @@ window.__stt = () => ({
   // 아래는 조작감 개선(자동 스크롤 엣지/재생원 전환/구간 처음부터) 검증·신고 대응용으로 추가.
   // 특히 loopTimers는 "V로 넘어갔는데 소리가 되감긴다"류 신고를 바로 판정한다 — 두 값이
   // 동시에 true면 옛 재생원의 인터벌이 안 꺼진 것.
-  lastSource, pendingSpeaker, speakerList: speakerList.slice(), loopEnabled, preRollEnabled,
+  lastSource, pendingSpeaker, speakerList: speakerList.slice(), loopEnabled,
   waveDragging, dragTarget,
   loopTimers: { wave: !!waveRepeatInterval, yt: !!youtubeRepeatInterval },
 });
@@ -2366,7 +2280,6 @@ function initWaveEvents() {
 initWaveEvents();
 
 restoreState();
-restoreStoredAudio();
 // 배너를 항상 레이아웃에 유지하는 방식(U2)으로 바꾸면서, 초기 로드 시 이 호출이 없으면
 // #pending-text-input이 HTML 기본값(visibility:visible)인 채로 잠깐 노출될 수 있다 —
 // 페이지가 뜨자마자 한 번 idle 상태로 확정해서 숨긴다.
